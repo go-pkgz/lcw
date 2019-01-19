@@ -1,6 +1,6 @@
 # Loading Cache Wrapper
 
-The library adds a thin level on top of [lru cache](github.com/hashicorp/golang-lru).
+The library adds a thin level on top of [lru cache](https://github.com/hashicorp/golang-lru).
 
 - LoadingCache (guava style)
 - Limit maximum cache size (in bytes)
@@ -9,9 +9,9 @@ The library adds a thin level on top of [lru cache](github.com/hashicorp/golang-
 - Functional style invalidation
 - Nop cache provided
   
-## Install
+## Install and update
 
-`go install github.com/go-pkgz/auth`
+`go get -u github.com/go-pkgz/lcw`
 
 ## Usage
 

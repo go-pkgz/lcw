@@ -28,7 +28,7 @@ if err != nil {
     panic("failed to get data")
 }
 
-s := val.(string) // cached values
+s := val.(string) // cached value
 
 ```
 

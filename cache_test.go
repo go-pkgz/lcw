@@ -1,6 +1,7 @@
 package lcw
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -33,6 +34,20 @@ func TestCache_Get(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, "result", res.(string))
 	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls), "cache hit")
+
+	_, err = lc.Get("key-2", func() (Value, error) {
+		atomic.AddInt32(&coldCalls, 1)
+		return "result2", errors.New("some error")
+	})
+	assert.NotNil(t, err)
+	assert.Equal(t, int32(2), atomic.LoadInt32(&coldCalls), "cache hit")
+
+	_, err = lc.Get("key-2", func() (Value, error) {
+		atomic.AddInt32(&coldCalls, 1)
+		return "result2", errors.New("some error")
+	})
+	assert.NotNil(t, err)
+	assert.Equal(t, int32(3), atomic.LoadInt32(&coldCalls), "cache hit")
 }
 
 func TestCache_Peek(t *testing.T) {
@@ -200,6 +215,34 @@ func TestCache_MaxCacheSizeParallel(t *testing.T) {
 	t.Log("size", lc.currentSize)
 }
 
+func TestCache_MaxKeySize(t *testing.T) {
+	lc, err := NewCache(MaxKeySize(5))
+	require.Nil(t, err)
+
+	res, err := lc.Get("key", func() (Value, error) {
+		return "value", nil
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, "value", res.(string))
+
+	res, err = lc.Get("key", func() (Value, error) {
+		return "valueXXX", nil
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, "value", res.(string), "cached")
+
+	res, err = lc.Get("key1234", func() (Value, error) {
+		return "value", nil
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, "value", res.(string))
+
+	res, err = lc.Get("key1234", func() (Value, error) {
+		return "valueXYZ", nil
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, "valueXYZ", res.(string), "not cached")
+}
 func TestCache_Parallel(t *testing.T) {
 	var coldCalls int32
 	lc, err := NewCache()
@@ -265,6 +308,25 @@ func TestCache_Invalidate(t *testing.T) {
 	assert.Equal(t, "result-xxx", res.(string), "not from the cache")
 }
 
+func TestCache_Purge(t *testing.T) {
+	var coldCalls int32
+	lc, err := NewCache()
+	require.Nil(t, err)
+
+	// fill cache
+	for i := 0; i < 1000; i++ {
+		_, err := lc.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+			atomic.AddInt32(&coldCalls, 1)
+			return fmt.Sprintf("result-%d", i), nil
+		})
+		require.Nil(t, err)
+	}
+	assert.Equal(t, int32(1000), atomic.LoadInt32(&coldCalls))
+	assert.Equal(t, 1000, lc.backend.Len())
+
+	lc.Purge()
+	assert.Equal(t, 0, lc.backend.Len(), "all keys removed")
+}
 func TestCache_BadOptions(t *testing.T) {
 	_, err := NewCache(MaxCacheSize(-1))
 	assert.EqualError(t, err, "failed to set cache option: negative max cache size")

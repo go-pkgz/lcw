@@ -20,16 +20,21 @@ The library adds a thin layer on top of [lru cache](https://github.com/hashicorp
 cache := lcw.NewCache(lcw.MaxKeys(500), lcw.MaxCacheSize(65536), lcw.MaxValSize(200), lcw.MaxKeySize(32))
 
 val, err := cache.Get("key123", func() (lcw.Value, error) {
-    res, err := getDataFromSomeSource(params)
+    res, err := getDataFromSomeSource(params) // returns string
     return res, err
 })
 
 if err != nil {
     panic("failed to get data")
 }
+
+s := val.(string) // cached values
+
 ```
 
 ## Details
 
 - All byte-size limits work for values implementing `lcw.Sizer` interface
 - Negative limits (max options) rejected
+- `lgr.Value` wraps `interface{}` and should be converted back to the concrete type.
+- The implementation started as a part of [remark42](https://github.com/umputun/remark) and later on moved to [go-pkgz/rest](https://github.com/go-pkgz/rest/tree/master/cache) library.

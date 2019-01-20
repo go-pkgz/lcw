@@ -1,5 +1,7 @@
 package lcw
 
+import "errors"
+
 // Option func type
 type Option func(c *Cache) error
 
@@ -7,6 +9,9 @@ type Option func(c *Cache) error
 // By default it is 0, which means unlimited.
 func MaxValSize(max int) Option {
 	return func(c *Cache) error {
+		if max < 0 {
+			return errors.New("negative max value size")
+		}
 		c.maxValueSize = max
 		return nil
 	}
@@ -16,6 +21,9 @@ func MaxValSize(max int) Option {
 // By default it is 0, which means unlimited.
 func MaxKeySize(max int) Option {
 	return func(c *Cache) error {
+		if max < 0 {
+			return errors.New("negative max key size")
+		}
 		c.maxKeySize = max
 		return nil
 	}
@@ -25,6 +33,9 @@ func MaxKeySize(max int) Option {
 // By default it is 0, which means unlimited.
 func MaxKeys(max int) Option {
 	return func(c *Cache) error {
+		if max < 0 {
+			return errors.New("negative max keys")
+		}
 		c.maxKeys = max
 		return nil
 	}
@@ -34,6 +45,9 @@ func MaxKeys(max int) Option {
 // By default it is 0, which means unlimited.
 func MaxCacheSize(max int64) Option {
 	return func(c *Cache) error {
+		if max < 0 {
+			return errors.New("negative max cache size")
+		}
 		c.maxCacheSize = max
 		return nil
 	}

@@ -1,18 +1,29 @@
 package lcw
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
+
+type options struct {
+	maxKeys      int
+	maxValueSize int
+	maxKeySize   int
+	maxCacheSize int64
+	ttl          time.Duration
+}
 
 // Option func type
-type Option func(c *Cache) error
+type Option func(o *options) error
 
 // MaxValSize functional option defines the largest value's size allowed to be cached
 // By default it is 0, which means unlimited.
 func MaxValSize(max int) Option {
-	return func(c *Cache) error {
+	return func(o *options) error {
 		if max < 0 {
 			return errors.New("negative max value size")
 		}
-		c.maxValueSize = max
+		o.maxValueSize = max
 		return nil
 	}
 }
@@ -20,11 +31,11 @@ func MaxValSize(max int) Option {
 // MaxKeySize functional option defines the largest key's size allowed to be used in cache
 // By default it is 0, which means unlimited.
 func MaxKeySize(max int) Option {
-	return func(c *Cache) error {
+	return func(o *options) error {
 		if max < 0 {
 			return errors.New("negative max key size")
 		}
-		c.maxKeySize = max
+		o.maxKeySize = max
 		return nil
 	}
 }
@@ -32,11 +43,11 @@ func MaxKeySize(max int) Option {
 // MaxKeys functional option defines how many keys to keep.
 // By default it is 0, which means unlimited.
 func MaxKeys(max int) Option {
-	return func(c *Cache) error {
+	return func(o *options) error {
 		if max < 0 {
 			return errors.New("negative max keys")
 		}
-		c.maxKeys = max
+		o.maxKeys = max
 		return nil
 	}
 }
@@ -44,11 +55,23 @@ func MaxKeys(max int) Option {
 // MaxCacheSize functional option defines the total size of cached data.
 // By default it is 0, which means unlimited.
 func MaxCacheSize(max int64) Option {
-	return func(c *Cache) error {
+	return func(o *options) error {
 		if max < 0 {
 			return errors.New("negative max cache size")
 		}
-		c.maxCacheSize = max
+		o.maxCacheSize = max
+		return nil
+	}
+}
+
+// MaxCacheSize functional option defines the total size of cached data.
+// By default it is 0, which means unlimited.
+func TTL(ttl time.Duration) Option {
+	return func(o *options) error {
+		if ttl < 0 {
+			return errors.New("negative ttl")
+		}
+		o.ttl = ttl
 		return nil
 	}
 }

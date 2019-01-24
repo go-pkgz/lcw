@@ -11,14 +11,22 @@ type Sizer interface {
 
 // LoadingCache defines guava-like cache with Get method returning cached value ao retriving it if not in cache
 type LoadingCache interface {
-	Get(key string, fn func() (Value, error)) (Value, err error)
+	Get(key string, fn func() (Value, error)) (val Value, err error)
 	Peek(key string) (Value, bool)
 	Invalidate(fn func(key string) bool)
 	Purge()
+
+	size() int64 // cache size in bytes
+	keys() int   // number of keys in cache
 }
 
 // Nop is do-nothing implementation of LoadingCache
 type Nop struct{}
+
+// NewNopCache makes new do-nothing cache
+func NewNopCache() *Nop {
+	return &Nop{}
+}
 
 // Get calls fn without any caching
 func (n *Nop) Get(key string, fn func() (Value, error)) (Value, error) { return fn() }
@@ -31,3 +39,9 @@ func (n *Nop) Invalidate(fn func(key string) bool) {}
 
 // Purge does nothing for nop cache
 func (n *Nop) Purge() {}
+
+// Size is always 0 for nop cache
+func (n *Nop) size() int64 { return 0 }
+
+// Keys is always 0 for nop cache
+func (n *Nop) keys() int { return 0 }

@@ -42,5 +42,5 @@ func TestNop_Peek(t *testing.T) {
 	assert.False(t, ok)
 
 	assert.Equal(t, 0, c.keys())
-	assert.Equal(t, 0, c.size())
+	assert.Equal(t, int64(0), c.size())
 }

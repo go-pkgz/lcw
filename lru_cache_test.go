@@ -2,6 +2,9 @@ package lcw
 
 import (
 	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
 	"sync/atomic"
 	"testing"
 
@@ -70,4 +73,47 @@ func TestLruCache_BadOptions(t *testing.T) {
 
 	_, err = NewLruCache(TTL(-1))
 	assert.EqualError(t, err, "failed to set cache option: negative ttl")
+}
+
+// LruCache illustrates the use of LRU loading cache
+func ExampleLruCache() {
+
+	// load page function
+	loadURL := func(url string) (string, error) {
+		resp, err := http.Get(url)
+		if err != nil {
+			return "", err
+		}
+		resp.Body.Close()
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	}
+
+	// fixed size LRU cache, 100 items, up to 10k in total size
+	cache, err := NewLruCache(MaxKeys(100), MaxCacheSize(10*1024))
+	if err != nil {
+		log.Fatalf("can't make lru cache, %v", err)
+	}
+
+	// url not in cache, load data
+	url := "https://radio-t.com/online/"
+	cache.Get(url, func() (val Value, err error) {
+		return loadURL(url)
+	})
+
+	// url not in cache, load data
+	url = "https://radio-t.com/info/"
+	cache.Get(url, func() (val Value, err error) {
+		return loadURL(url)
+	})
+
+	// url cached, skip load and get from the cache
+	url = "https://radio-t.com/online/"
+	cache.Get(url, func() (val Value, err error) {
+		return loadURL(url)
+	})
+
 }

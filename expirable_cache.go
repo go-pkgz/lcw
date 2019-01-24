@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+// ExpirableCache implements LoadingCache with TTL.
 type ExpirableCache struct {
 	options
 	currentSize int64
@@ -15,7 +16,7 @@ type ExpirableCache struct {
 	backend     *cache.Cache
 }
 
-// NewLruCache makes LoadingCache (lru) implementation, 1000 max keys by default
+// NewExpirableCache makes expirable LoadingCache implementation, 1000 max keys by default and 5s TTL
 func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
 
 	res := ExpirableCache{

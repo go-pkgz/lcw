@@ -64,8 +64,8 @@ func MaxCacheSize(max int64) Option {
 	}
 }
 
-// MaxCacheSize functional option defines the total size of cached data.
-// By default it is 0, which means unlimited.
+// TTL functional option defines duration.
+// Works for ExpirableCache only
 func TTL(ttl time.Duration) Option {
 	return func(o *options) error {
 		if ttl < 0 {

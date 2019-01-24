@@ -15,9 +15,6 @@ type LoadingCache interface {
 	Peek(key string) (Value, bool)
 	Invalidate(fn func(key string) bool)
 	Purge()
-
-	size() int64 // cache size in bytes
-	keys() int   // number of keys in cache
 }
 
 // Nop is do-nothing implementation of LoadingCache
@@ -39,9 +36,3 @@ func (n *Nop) Invalidate(fn func(key string) bool) {}
 
 // Purge does nothing for nop cache
 func (n *Nop) Purge() {}
-
-// Size is always 0 for nop cache
-func (n *Nop) size() int64 { return 0 }
-
-// Keys is always 0 for nop cache
-func (n *Nop) keys() int { return 0 }

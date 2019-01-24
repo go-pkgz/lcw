@@ -14,7 +14,7 @@ type LruCache struct {
 	currentSize int64
 }
 
-// NewLruCache makes LoadingCache (lru) implementation, 1000 max keys by default
+// NewLruCache makes LRU LoadingCache implementation, 1000 max keys by default
 func NewLruCache(opts ...Option) (*LruCache, error) {
 
 	res := LruCache{

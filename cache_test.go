@@ -314,11 +314,20 @@ func TestCache_Invalidate(t *testing.T) {
 			assert.Equal(t, "result-xxx", res.(string), "not from the cache")
 		})
 	}
-
 }
 
-func cachesTestList(t *testing.T, opts ...Option) []LoadingCache {
-	var caches []LoadingCache
+type counts interface {
+	size() int64 // cache size in bytes
+	keys() int   // number of keys in cache
+}
+
+type countedCache interface {
+	LoadingCache
+	counts
+}
+
+func cachesTestList(t *testing.T, opts ...Option) []countedCache {
+	var caches []countedCache
 	ec, err := NewExpirableCache(opts...)
 	require.NoError(t, err, "can't make exp cache")
 	caches = append(caches, ec)

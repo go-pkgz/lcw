@@ -5,6 +5,8 @@ go:
 
 install: true
 
+go_import_path: github.com/go-pkgz/lcw
+
 before_install:
   - export TZ=America/Chicago
   - curl -L https://git.io/vp6lP | sh 

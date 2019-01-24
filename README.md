@@ -3,12 +3,13 @@
 
 The library adds a thin layer on top of [lru cache](https://github.com/hashicorp/golang-lru) and [patrickmn/go-cache](https://github.com/patrickmn/go-cache).
 
-It exposes 3 caches, implementing `LoadingCache` interface:
+| Cache name       | Constructor             | Defaults          | Description           |
+| ---------------- | ----------------------- | ----------------- | --------------------- |
+| `LruCache`       | `lcw.NewLruCache`       | keys=1000         | LRU cache with limits |
+| `ExpirableCache` | `lcw.NewExpirableCache` | keys=1000, ttl=5m | TTL cache with limits |
+| `Nop`            | `lcw.NewNopCache`       |                   | Do-nothing cache      |
 
-1. `LruCache` - LRU cache with limits, created with `lcw.NewLruCache`
-1. `ExpirableCache` - TTL cache with limits, created with `lcw.NewExpirableCache`
-1. `Nop` - do-nothing cache
- 
+
 Main features:
  
 - LoadingCache (guava style)
@@ -44,7 +45,7 @@ s := val.(string) // cached value
 
 ## Details
 
-- All byte-size limits work for values implementing `lcw.Sizer` interface
+- All byte-size limits (MaxCacheSize and MaxValSize) only work for values implementing `lcw.Sizer` interface.
 - Negative limits (max options) rejected
 - `lgr.Value` wraps `interface{}` and should be converted back to the concrete type.
 - The implementation started as a part of [remark42](https://github.com/umputun/remark) and later on moved to [go-pkgz/rest](https://github.com/go-pkgz/rest/tree/master/cache) library and finaly generalized to become `lcw`.

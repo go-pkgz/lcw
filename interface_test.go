@@ -9,7 +9,7 @@ import (
 
 func TestNop_Get(t *testing.T) {
 	var coldCalls int32
-	c := Nop{}
+	c := NewNopCache()
 	res, err := c.Get("key1", func() (Value, error) {
 		atomic.AddInt32(&coldCalls, 1)
 		return "result", nil
@@ -29,7 +29,7 @@ func TestNop_Get(t *testing.T) {
 
 func TestNop_Peek(t *testing.T) {
 	var coldCalls int32
-	c := Nop{}
+	c := NewNopCache()
 	res, err := c.Get("key1", func() (Value, error) {
 		atomic.AddInt32(&coldCalls, 1)
 		return "result", nil

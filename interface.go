@@ -23,6 +23,11 @@ type LoadingCache interface {
 // Nop is do-nothing implementation of LoadingCache
 type Nop struct{}
 
+// NewNopCache makes new do-nothing cache
+func NewNopCache() *Nop {
+	return &Nop{}
+}
+
 // Get calls fn without any caching
 func (n *Nop) Get(key string, fn func() (Value, error)) (Value, error) { return fn() }
 

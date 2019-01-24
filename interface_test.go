@@ -40,4 +40,7 @@ func TestNop_Peek(t *testing.T) {
 
 	_, ok := c.Peek("key1")
 	assert.False(t, ok)
+
+	assert.Equal(t, 0, c.keys())
+	assert.Equal(t, 0, c.size())
 }

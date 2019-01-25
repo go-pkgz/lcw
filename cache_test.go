@@ -316,6 +316,28 @@ func TestCache_Invalidate(t *testing.T) {
 	}
 }
 
+func TestCache_Delete(t *testing.T) {
+
+	caches := cachesTestList(t)
+	for _, c := range caches {
+		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
+			// fill cache
+			for i := 0; i < 1000; i++ {
+				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+					return sizedString(fmt.Sprintf("result-%d", i)), nil
+				})
+				require.Nil(t, err)
+			}
+			assert.Equal(t, 1000, c.Stat().Keys)
+			assert.Equal(t, int64(9890), c.Stat().Size)
+
+			c.Delete("key-2")
+			assert.Equal(t, 999, c.Stat().Keys)
+			assert.Equal(t, int64(9890-8), c.Stat().Size)
+		})
+	}
+}
+
 func TestCache_Stats(t *testing.T) {
 	caches := cachesTestList(t)
 	for _, c := range caches {

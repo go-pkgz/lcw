@@ -16,6 +16,7 @@ type LoadingCache interface {
 	Get(key string, fn func() (Value, error)) (val Value, err error) // load or get from cache
 	Peek(key string) (Value, bool)                                   // get from cache by key
 	Invalidate(fn func(key string) bool)                             // invalidate items for func(key) == true
+	Delete(key string)                                               // delete by key
 	Purge()                                                          // clear cache
 	Stat() CacheStat                                                 // cache stats
 }
@@ -54,6 +55,9 @@ func (n *Nop) Invalidate(fn func(key string) bool) {}
 
 // Purge does nothing for nop cache
 func (n *Nop) Purge() {}
+
+// Delete does nothing for nop cache
+func (n *Nop) Delete(key string) {}
 
 // Stat always 0s for nop cache
 func (n *Nop) Stat() CacheStat {

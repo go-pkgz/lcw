@@ -94,6 +94,11 @@ func (c *ExpirableCache) Purge() {
 	atomic.StoreInt64(&c.currentSize, 0)
 }
 
+// Delete cache item by key
+func (c *ExpirableCache) Delete(key string) {
+	c.backend.Delete(key)
+}
+
 // Stat returns cache statistics
 func (c *ExpirableCache) Stat() CacheStat {
 	return CacheStat{

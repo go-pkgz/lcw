@@ -96,6 +96,11 @@ func (c *LruCache) Invalidate(fn func(key string) bool) {
 	}
 }
 
+// Delete cache item by key
+func (c *LruCache) Delete(key string) {
+	c.backend.Remove(key)
+}
+
 // Stat returns cache statistics
 func (c *LruCache) Stat() CacheStat {
 	return CacheStat{

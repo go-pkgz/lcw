@@ -4,10 +4,39 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestExpirableCache(t *testing.T) {
+	lc, err := NewExpirableCache(MaxKeys(5), TTL(time.Millisecond*100))
+	require.NoError(t, err)
+	for i := 0; i < 5; i++ {
+		_, e := lc.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+			return fmt.Sprintf("result-%d", i), nil
+		})
+		assert.NoError(t, e)
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	assert.Equal(t, 5, lc.Stat().Keys)
+	assert.Equal(t, int64(5), lc.Stat().Misses)
+
+	_, e := lc.Get("key-xx", func() (Value, error) {
+		return "result-xx", nil
+	})
+	assert.NoError(t, e)
+	assert.Equal(t, 5, lc.Stat().Keys)
+	assert.Equal(t, int64(6), lc.Stat().Misses)
+
+	time.Sleep(55 * time.Millisecond)
+	assert.Equal(t, 4, lc.Stat().Keys)
+
+	time.Sleep(210 * time.Millisecond)
+	assert.Equal(t, 0, lc.keys())
+}
 
 func TestExpirableCache_MaxKeys(t *testing.T) {
 	var coldCalls int32
@@ -38,7 +67,7 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	})
 	assert.Nil(t, err)
 	assert.Equal(t, "result-X", res.(string))
-	assert.Equal(t, int64(5), lc.currKeys)
+	assert.Equal(t, 5, lc.keys())
 
 	// put to cache and make sure it cached
 	res, err = lc.Get("key-Z", func() (Value, error) {
@@ -52,7 +81,7 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	})
 	assert.Nil(t, err)
 	assert.Equal(t, "result-Zzzz", res.(string), "got non-cached value")
-	assert.Equal(t, int64(5), lc.currKeys)
+	assert.Equal(t, 5, lc.keys())
 }
 
 func TestExpirableCache_BadOptions(t *testing.T) {

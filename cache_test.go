@@ -316,6 +316,41 @@ func TestCache_Invalidate(t *testing.T) {
 	}
 }
 
+func TestCache_Stats(t *testing.T) {
+	caches := cachesTestList(t)
+	for _, c := range caches {
+		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
+			// fill cache
+			for i := 0; i < 100; i++ {
+				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+					return sizedString(fmt.Sprintf("result-%d", i)), nil
+				})
+				require.Nil(t, err)
+			}
+			stats := c.Stat()
+			assert.Equal(t, CacheStat{Hits: 0, Misses: 100, Keys: 100, Size: 890}, stats)
+
+			_, err := c.Get("key-1", func() (Value, error) {
+				return "xyz", nil
+			})
+			require.NoError(t, err)
+			assert.Equal(t, CacheStat{Hits: 1, Misses: 100, Keys: 100, Size: 890}, c.Stat())
+
+			_, err = c.Get("key-1123", func() (Value, error) {
+				return sizedString("xyz"), nil
+			})
+			require.NoError(t, err)
+			assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 893}, c.Stat())
+
+			_, err = c.Get("key-9999", func() (Value, error) {
+				return nil, errors.New("err")
+			})
+			assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 893, Errors: 1}, c.Stat())
+		})
+
+	}
+}
+
 type counts interface {
 	size() int64 // cache size in bytes
 	keys() int   // number of keys in cache

@@ -11,6 +11,7 @@ import (
 // ExpirableCache implements LoadingCache with TTL.
 type ExpirableCache struct {
 	options
+	CacheStat
 	currentSize int64
 	currKeys    int64
 	backend     *cache.Cache
@@ -51,12 +52,15 @@ func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
 func (c *ExpirableCache) Get(key string, fn func() (Value, error)) (data Value, err error) {
 
 	if v, ok := c.backend.Get(key); ok {
+		atomic.AddInt64(&c.Hits, 1)
 		return v, nil
 	}
 
 	if data, err = fn(); err != nil {
+		atomic.AddInt64(&c.Errors, 1)
 		return data, err
 	}
+	atomic.AddInt64(&c.Misses, 1)
 
 	if c.allowed(key, data) {
 		if s, ok := data.(Sizer); ok {
@@ -92,6 +96,17 @@ func (c *ExpirableCache) Purge() {
 	c.backend.Flush()
 	atomic.StoreInt64(&c.currentSize, 0)
 	atomic.StoreInt64(&c.currKeys, 0)
+}
+
+// Stat returns cache statistics
+func (c *ExpirableCache) Stat() CacheStat {
+	return CacheStat{
+		Hits:   c.Hits,
+		Misses: c.Misses,
+		Size:   c.size(),
+		Keys:   c.keys(),
+		Errors: c.Errors,
+	}
 }
 
 func (c *ExpirableCache) size() int64 {

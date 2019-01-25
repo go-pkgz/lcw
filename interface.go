@@ -1,5 +1,7 @@
 package lcw
 
+import "fmt"
+
 // Value type wraps interface{}
 type Value interface{}
 
@@ -15,6 +17,22 @@ type LoadingCache interface {
 	Peek(key string) (Value, bool)
 	Invalidate(fn func(key string) bool)
 	Purge()
+	Stat() CacheStat
+}
+
+// CacheStat represent stats values
+type CacheStat struct {
+	Hits   int64
+	Misses int64
+	Keys   int
+	Size   int64
+	Errors int64
+}
+
+// String fromats cache stats
+func (s *CacheStat) String() string {
+	return fmt.Sprintf("{hits:%d, misses:%d, ratio:%.1f%%, keys:%d, size:%d, errors:%d}",
+		s.Hits, s.Misses, 100*(float64(s.Hits)/float64(s.Hits+s.Misses)), s.Keys, s.Size, s.Errors)
 }
 
 // Nop is do-nothing implementation of LoadingCache
@@ -36,3 +54,8 @@ func (n *Nop) Invalidate(fn func(key string) bool) {}
 
 // Purge does nothing for nop cache
 func (n *Nop) Purge() {}
+
+// Stat always 0s for nop cache
+func (n *Nop) Stat() CacheStat {
+	return CacheStat{}
+}

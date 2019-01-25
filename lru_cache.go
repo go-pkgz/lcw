@@ -10,6 +10,7 @@ import (
 // LruCache wraps lru.LruCache with laoding cache Get and size limits
 type LruCache struct {
 	options
+	CacheStat
 	backend     *lru.Cache
 	currentSize int64
 }
@@ -49,12 +50,16 @@ func NewLruCache(opts ...Option) (*LruCache, error) {
 func (c *LruCache) Get(key string, fn func() (Value, error)) (data Value, err error) {
 
 	if v, ok := c.backend.Get(key); ok {
+		atomic.AddInt64(&c.Hits, 1)
 		return v, nil
 	}
 
 	if data, err = fn(); err != nil {
+		atomic.AddInt64(&c.Errors, 1)
 		return data, err
 	}
+
+	atomic.AddInt64(&c.Misses, 1)
 
 	if c.allowed(key, data) {
 		c.backend.Add(key, data)
@@ -88,6 +93,17 @@ func (c *LruCache) Invalidate(fn func(key string) bool) {
 		if key, ok := k.(string); ok && fn(key) {
 			c.backend.Remove(key)
 		}
+	}
+}
+
+// Stat returns cache statistics
+func (c *LruCache) Stat() CacheStat {
+	return CacheStat{
+		Hits:   c.Hits,
+		Misses: c.Misses,
+		Size:   c.size(),
+		Keys:   c.keys(),
+		Errors: c.Errors,
 	}
 }
 

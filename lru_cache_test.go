@@ -84,7 +84,7 @@ func ExampleLruCache() {
 		if err != nil {
 			return "", err
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		b, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			return "", err
@@ -100,20 +100,32 @@ func ExampleLruCache() {
 
 	// url not in cache, load data
 	url := "https://radio-t.com/online/"
-	cache.Get(url, func() (val Value, err error) {
+	val, err := cache.Get(url, func() (val Value, err error) {
 		return loadURL(url)
 	})
+	if err != nil {
+		log.Fatalf("can't load url %s, %v", url, err)
+	}
+	log.Print(val.(string))
 
 	// url not in cache, load data
 	url = "https://radio-t.com/info/"
-	cache.Get(url, func() (val Value, err error) {
+	val, err = cache.Get(url, func() (val Value, err error) {
 		return loadURL(url)
 	})
+	if err != nil {
+		log.Fatalf("can't load url %s, %v", url, err)
+	}
+	log.Print(val.(string))
 
 	// url cached, skip load and get from the cache
 	url = "https://radio-t.com/online/"
-	cache.Get(url, func() (val Value, err error) {
+	val, err = cache.Get(url, func() (val Value, err error) {
 		return loadURL(url)
 	})
+	if err != nil {
+		log.Fatalf("can't load url %s, %v", url, err)
+	}
+	log.Print(val.(string))
 
 }

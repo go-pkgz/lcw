@@ -30,7 +30,7 @@ type CacheStat struct {
 	Errors int64
 }
 
-// String fromats cache stats
+// String formats cache stats
 func (s *CacheStat) String() string {
 	return fmt.Sprintf("{hits:%d, misses:%d, ratio:%.1f%%, keys:%d, size:%d, errors:%d}",
 		s.Hits, s.Misses, 100*(float64(s.Hits)/float64(s.Hits+s.Misses)), s.Keys, s.Size, s.Errors)

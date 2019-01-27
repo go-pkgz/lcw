@@ -367,6 +367,7 @@ func TestCache_Stats(t *testing.T) {
 			_, err = c.Get("key-9999", func() (Value, error) {
 				return nil, errors.New("err")
 			})
+			require.NotNil(t, err)
 			assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 893, Errors: 1}, c.Stat())
 		})
 

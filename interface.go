@@ -11,7 +11,7 @@ type Sizer interface {
 	Size() int
 }
 
-// LoadingCache defines guava-like cache with Get method returning cached value ao retriving it if not in cache
+// LoadingCache defines guava-like cache with Get method returning cached value ao retrieving it if not in cache
 type LoadingCache interface {
 	Get(key string, fn func() (Value, error)) (val Value, err error) // load or get from cache
 	Peek(key string) (Value, bool)                                   // get from cache by key

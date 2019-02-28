@@ -31,6 +31,9 @@ func NewLruCache(opts ...Option) (*LruCache, error) {
 	}
 
 	onEvicted := func(key interface{}, value interface{}) {
+		if res.onEvicted != nil {
+			res.onEvicted(key.(string), value)
+		}
 		if s, ok := value.(Sizer); ok {
 			size := s.Size()
 			atomic.AddInt64(&res.currentSize, -1*int64(size))

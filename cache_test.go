@@ -338,6 +338,39 @@ func TestCache_Delete(t *testing.T) {
 	}
 }
 
+func TestCache_DeleteWithEvent(t *testing.T) {
+	var evKey string
+	var evVal Value
+	var evCount int
+	onEvict := func(key string, value Value) {
+		evKey = key
+		evVal = value
+		evCount++
+	}
+
+	caches := cachesTestList(t, OnEvicted(onEvict))
+	for _, c := range caches {
+		evKey, evVal, evCount = "", "", 0
+		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
+			// fill cache
+			for i := 0; i < 1000; i++ {
+				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+					return sizedString(fmt.Sprintf("result-%d", i)), nil
+				})
+				require.Nil(t, err)
+			}
+			assert.Equal(t, 1000, c.Stat().Keys)
+			assert.Equal(t, int64(9890), c.Stat().Size)
+
+			c.Delete("key-2")
+			assert.Equal(t, 999, c.Stat().Keys)
+			assert.Equal(t, "key-2", evKey)
+			assert.Equal(t, sizedString("result-2"), evVal)
+			assert.Equal(t, 1, evCount)
+		})
+	}
+}
+
 func TestCache_Stats(t *testing.T) {
 	caches := cachesTestList(t)
 	for _, c := range caches {

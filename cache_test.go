@@ -457,7 +457,7 @@ func ExampleLoadingCache_Get() {
 	}
 
 	// try to get from cache and because mykey is not in will put it
-	_, err = c.Get("mykey", func() (Value, error) {
+	_, _ = c.Get("mykey", func() (Value, error) {
 		fmt.Println("cache miss 1")
 		return "myval-1", nil
 	})

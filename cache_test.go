@@ -449,6 +449,54 @@ func TestCache_Stats(t *testing.T) {
 	}
 }
 
+// LoadingCache illustrates creation of a cache and load
+func ExampleLoadingCache_Get() {
+	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30)) // make expirable cache (30m TTL) with up to 10 keys
+	if err != nil {
+		panic("can' make cache")
+	}
+
+	// try to get from cache and because mykey is not in will put it
+	v, err := c.Get("mykey", func() (Value, error) {
+		fmt.Println("cache miss 1")
+		return "myval-1", nil
+	})
+
+	// get from cache, func won't run because mykey in
+	v, err = c.Get("mykey", func() (Value, error) {
+		fmt.Println("cache miss 2")
+		return "myval-2", nil
+	})
+
+	if err != nil {
+		panic("can't get from cache")
+	}
+	fmt.Printf("got %s from cache, stats: %s", v.(string), c.Stat())
+	// Output: cache miss 1
+	// got myval-1 from cache, stats: {hits:1, misses:1, ratio:50.0%, keys:1, size:0, errors:0}
+}
+
+func ExampleLoadingCache_Delete() {
+
+	// make expirable cache (30m TTL) with up to 10 keys. Set callback on eviction event
+	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30), OnEvicted(func(key string, value Value) {
+		fmt.Println("key " + key + " evicted")
+	}))
+	if err != nil {
+		panic("can' make cache")
+	}
+
+	// try to get from cache and because mykey is not in will put it
+	c.Get("mykey", func() (Value, error) {
+		return "myval-1", nil
+	})
+
+	c.Delete("mykey")
+	fmt.Println("stats: " + c.Stat().String())
+	// Output: key mykey evicted
+	// stats: {hits:0, misses:1, ratio:0.0%, keys:0, size:0, errors:0}
+}
+
 type counts interface {
 	size() int64 // cache size in bytes
 	keys() int   // number of keys in cache

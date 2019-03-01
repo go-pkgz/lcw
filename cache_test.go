@@ -457,13 +457,13 @@ func ExampleLoadingCache_Get() {
 	}
 
 	// try to get from cache and because mykey is not in will put it
-	v, err := c.Get("mykey", func() (Value, error) {
+	_, err = c.Get("mykey", func() (Value, error) {
 		fmt.Println("cache miss 1")
 		return "myval-1", nil
 	})
 
 	// get from cache, func won't run because mykey in
-	v, err = c.Get("mykey", func() (Value, error) {
+	v, err := c.Get("mykey", func() (Value, error) {
 		fmt.Println("cache miss 2")
 		return "myval-2", nil
 	})
@@ -487,7 +487,7 @@ func ExampleLoadingCache_Delete() {
 	}
 
 	// try to get from cache and because mykey is not in will put it
-	c.Get("mykey", func() (Value, error) {
+	_, _ = c.Get("mykey", func() (Value, error) {
 		return "myval-1", nil
 	})
 

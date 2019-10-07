@@ -80,7 +80,7 @@ func ExampleLruCache() {
 
 	// load page function
 	loadURL := func(url string) (string, error) {
-		resp, err := http.Get(url)
+		resp, err := http.Get(url) // nolint
 		if err != nil {
 			return "", err
 		}

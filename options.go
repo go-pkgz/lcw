@@ -14,7 +14,7 @@ type options struct {
 	maxCacheSize int64
 	ttl          time.Duration
 	onEvicted    func(key string, value Value)
-	redis        *redis.Options
+	redisOptions *redis.Options
 }
 
 // Option func type
@@ -84,6 +84,17 @@ func TTL(ttl time.Duration) Option {
 func OnEvicted(fn func(key string, value Value)) Option {
 	return func(o *options) error {
 		o.onEvicted = fn
+		return nil
+	}
+}
+
+// RedisOptions functional option defines duration.
+// Works for RedisCache only
+func RedisOptions(Addr string, Password string, DB int) Option {
+	return func(o *options) error {
+		o.redisOptions.Addr = Addr
+		o.redisOptions.Password = Password
+		o.redisOptions.DB = DB
 		return nil
 	}
 }

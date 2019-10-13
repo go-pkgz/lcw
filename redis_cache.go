@@ -3,6 +3,7 @@ package lcw
 import (
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
@@ -12,8 +13,7 @@ import (
 type RedisCache struct {
 	options
 	CacheStat
-	backend     *redis.Client
-	currentSize int64
+	backend *redis.Client
 }
 
 // NewRedisCache makes Redis LoadingCache implementation.
@@ -30,7 +30,7 @@ func NewRedisCache(opts ...Option) (*RedisCache, error) {
 		}
 	}
 
-	res.backend = redis.NewClient(res.redis)
+	res.backend = redis.NewClient(res.redisOptions)
 
 	return &res, nil
 }
@@ -115,5 +115,9 @@ func (c *RedisCache) allowed(key string, data Value) bool {
 	if c.maxKeySize > 0 && len(key) > c.maxKeySize {
 		return false
 	}
+	if unsafe.Sizeof(data) > (512 * 1024 * 1024) {
+		return false
+	}
+
 	return true
 }

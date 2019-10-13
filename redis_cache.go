@@ -3,7 +3,6 @@ package lcw
 import (
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
@@ -115,9 +114,11 @@ func (c *RedisCache) allowed(key string, data Value) bool {
 	if c.maxKeySize > 0 && len(key) > c.maxKeySize {
 		return false
 	}
-	if unsafe.Sizeof(data) > (512 * 1024 * 1024) {
-		return false
+	if s, ok := data.(Sizer); ok {
+		// Maximum allowed value size in Redis
+		if s.Size() >= (512 * 1024 * 1024) {
+			return false
+		}
 	}
-
 	return true
 }

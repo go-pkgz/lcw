@@ -3,6 +3,8 @@ package lcw
 import (
 	"errors"
 	"time"
+
+	"github.com/go-redis/redis"
 )
 
 type options struct {
@@ -12,6 +14,7 @@ type options struct {
 	maxCacheSize int64
 	ttl          time.Duration
 	onEvicted    func(key string, value Value)
+	redis        *redis.Options
 }
 
 // Option func type

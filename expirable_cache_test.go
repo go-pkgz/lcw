@@ -88,8 +88,8 @@ func TestExpirableCache_BadOptions(t *testing.T) {
 	_, err := NewExpirableCache(MaxCacheSize(-1))
 	assert.EqualError(t, err, "failed to set cache option: negative max cache size")
 
-	_, err = NewExpirableCache(MaxCacheSize(-1))
-	assert.EqualError(t, err, "failed to set cache option: negative max cache size")
+	_, err = NewExpirableCache(MaxKeySize(-1))
+	assert.EqualError(t, err, "failed to set cache option: negative max key size")
 
 	_, err = NewExpirableCache(MaxKeys(-1))
 	assert.EqualError(t, err, "failed to set cache option: negative max keys")

@@ -62,8 +62,8 @@ func TestLruCache_BadOptions(t *testing.T) {
 	_, err := NewLruCache(MaxCacheSize(-1))
 	assert.EqualError(t, err, "failed to set cache option: negative max cache size")
 
-	_, err = NewLruCache(MaxCacheSize(-1))
-	assert.EqualError(t, err, "failed to set cache option: negative max cache size")
+	_, err = NewLruCache(MaxKeySize(-1))
+	assert.EqualError(t, err, "failed to set cache option: negative max key size")
 
 	_, err = NewLruCache(MaxKeys(-1))
 	assert.EqualError(t, err, "failed to set cache option: negative max keys")

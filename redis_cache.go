@@ -4,9 +4,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-redis/redis"
+	redis "github.com/go-redis/redis/v7"
 	"github.com/pkg/errors"
 )
+
+// RedisSizeLimit is maximum allowed value size in Redis
+const RedisSizeLimit = 512 * 1024 * 1024
 
 // RedisCache implements LoadingCache for Redis.
 type RedisCache struct {
@@ -16,7 +19,7 @@ type RedisCache struct {
 }
 
 // NewRedisCache makes Redis LoadingCache implementation.
-func NewRedisCache(opts ...Option) (*RedisCache, error) {
+func NewRedisCache(backend *redis.Client, opts ...Option) (*RedisCache, error) {
 
 	res := RedisCache{
 		options: options{
@@ -29,7 +32,7 @@ func NewRedisCache(opts ...Option) (*RedisCache, error) {
 		}
 	}
 
-	res.backend = redis.NewClient(res.redisOptions)
+	res.backend = backend
 
 	return &res, nil
 }
@@ -37,24 +40,29 @@ func NewRedisCache(opts ...Option) (*RedisCache, error) {
 // Get gets value by key or load with fn if not found in cache
 func (c *RedisCache) Get(key string, fn func() (Value, error)) (data Value, err error) {
 
-	v, ok := c.backend.Get(key).Result()
-	if ok == nil {
+	v, getErr := c.backend.Get(key).Result()
+	switch getErr {
+	case nil:
 		atomic.AddInt64(&c.Hits, 1)
 		return v, nil
-	}
-	if ok == redis.Nil {
+	case redis.Nil:
 		if data, err = fn(); err != nil {
 			atomic.AddInt64(&c.Errors, 1)
 			return data, err
 		}
-	} else if ok != nil {
+	default:
 		atomic.AddInt64(&c.Errors, 1)
-		return v, ok
+		return v, getErr
 	}
 	atomic.AddInt64(&c.Misses, 1)
 
 	if c.allowed(key, data) {
-		c.backend.Set(key, data, c.ttl)
+		_, setErr := c.backend.Set(key, data, c.ttl).Result()
+		if setErr != nil {
+			atomic.AddInt64(&c.Errors, 1)
+			return data, setErr
+		}
+
 	}
 	return data, nil
 }
@@ -108,15 +116,17 @@ func (c *RedisCache) keys() int {
 }
 
 func (c *RedisCache) allowed(key string, data Value) bool {
-	if c.backend.DBSize().Val() >= int64(c.maxKeys) {
+	if c.maxKeys > 0 && c.backend.DBSize().Val() >= int64(c.maxKeys) {
 		return false
 	}
 	if c.maxKeySize > 0 && len(key) > c.maxKeySize {
 		return false
 	}
 	if s, ok := data.(Sizer); ok {
-		// Maximum allowed value size in Redis
-		if s.Size() >= (512 * 1024 * 1024) {
+		if c.maxValueSize > 0 && (s.Size() >= c.maxValueSize || s.Size() >= RedisSizeLimit) {
+			return false
+		}
+		if c.maxValueSize <= 0 && s.Size() >= RedisSizeLimit {
 			return false
 		}
 	}

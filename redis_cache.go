@@ -8,8 +8,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-// RedisSizeLimit is maximum allowed value size in Redis
-const RedisSizeLimit = 512 * 1024 * 1024
+// RedisValueSizeLimit is maximum allowed value size in Redis
+const RedisValueSizeLimit = 512 * 1024 * 1024
 
 // RedisCache implements LoadingCache for Redis.
 type RedisCache struct {
@@ -32,6 +32,10 @@ func NewRedisCache(backend *redis.Client, opts ...Option) (*RedisCache, error) {
 		}
 	}
 
+	if res.maxValueSize <= 0 {
+		res.maxValueSize = RedisValueSizeLimit
+	}
+
 	res.backend = backend
 
 	return &res, nil
@@ -42,14 +46,17 @@ func (c *RedisCache) Get(key string, fn func() (Value, error)) (data Value, err 
 
 	v, getErr := c.backend.Get(key).Result()
 	switch getErr {
+	// RedisClient returns nil when find a key in DB
 	case nil:
 		atomic.AddInt64(&c.Hits, 1)
 		return v, nil
+	// RedisClient returns redis.Nil when doesn't find a key in DB
 	case redis.Nil:
 		if data, err = fn(); err != nil {
 			atomic.AddInt64(&c.Errors, 1)
 			return data, err
 		}
+	// RedisClient returns !nil when somthing goes wrong while get data
 	default:
 		atomic.AddInt64(&c.Errors, 1)
 		return v, getErr
@@ -123,10 +130,7 @@ func (c *RedisCache) allowed(key string, data Value) bool {
 		return false
 	}
 	if s, ok := data.(Sizer); ok {
-		if c.maxValueSize > 0 && (s.Size() >= c.maxValueSize || s.Size() >= RedisSizeLimit) {
-			return false
-		}
-		if c.maxValueSize <= 0 && s.Size() >= RedisSizeLimit {
+		if c.maxValueSize > 0 && (s.Size() >= c.maxValueSize) {
 			return false
 		}
 	}

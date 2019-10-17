@@ -1,6 +1,7 @@
 package lcw
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"sync/atomic"
@@ -22,6 +23,8 @@ func newTestRedisServer() *miniredis.Miniredis {
 
 	return mr
 }
+
+type fakeString string
 
 func TestExpirableRedisCache(t *testing.T) {
 	server := newTestRedisServer()
@@ -57,17 +60,6 @@ func TestExpirableRedisCache(t *testing.T) {
 	assert.Equal(t, 0, lc.keys())
 
 }
-
-// func Test1(t *testing.T) {
-// 	server := newTestRedisServer()
-// 	client := redis.NewClient(&redis.Options{
-// 		Addr: server.Addr()})
-// 	lc, err := NewRedisCache(client, MaxKeys(5), MaxValSize(10), MaxKeySize(10))
-// 	if err != nil {
-// 		log.Fatalf("can't make redis cache, %v", err)
-// 	}
-
-// }
 
 func TestRedisCache(t *testing.T) {
 	var coldCalls int32
@@ -126,6 +118,42 @@ func TestRedisCache(t *testing.T) {
 	assert.Equal(t, "result-Zzzz", res.(string), "got non-cached value")
 	assert.Equal(t, 5, lc.keys())
 
+	res, ok := lc.Peek("error-key-Z2")
+	assert.False(t, ok)
+	assert.Nil(t, res)
+}
+
+func TestRedisCacheErrors(t *testing.T) {
+
+	server := newTestRedisServer()
+	client := redis.NewClient(&redis.Options{
+		Addr: server.Addr()})
+	lc, err := NewRedisCache(client)
+	if err != nil {
+		log.Fatalf("can't make redis cache, %v", err)
+	}
+
+	res, err := lc.Get("error-key-Z", func() (Value, error) {
+		return "error-result-Z", errors.New("some error")
+	})
+	assert.NotNil(t, err)
+	assert.Equal(t, "error-result-Z", res.(string))
+	assert.Equal(t, int64(1), lc.Stat().Errors)
+
+	res, err = lc.Get("error-key-Z2", func() (Value, error) {
+		return fakeString("error-result-Z2"), nil
+	})
+	assert.NotNil(t, err)
+	assert.Equal(t, fakeString("error-result-Z2"), res.(fakeString))
+	assert.Equal(t, int64(2), lc.Stat().Errors)
+
+	server.Close()
+	res, err = lc.Get("error-key-Z3", func() (Value, error) {
+		return fakeString("error-result-Z3"), nil
+	})
+	assert.NotNil(t, err)
+	assert.Equal(t, "", res.(string))
+	assert.Equal(t, int64(3), lc.Stat().Errors)
 }
 
 func TestRedisCache_BadOptions(t *testing.T) {
@@ -147,4 +175,8 @@ func TestRedisCache_BadOptions(t *testing.T) {
 
 	_, err = NewRedisCache(client, TTL(-1))
 	assert.EqualError(t, err, "failed to set cache option: negative ttl")
+
+	_, err = NewRedisCache(client, MaxKeySize(-1))
+	assert.EqualError(t, err, "failed to set cache option: negative max key size")
+
 }

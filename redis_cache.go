@@ -32,7 +32,7 @@ func NewRedisCache(backend *redis.Client, opts ...Option) (*RedisCache, error) {
 		}
 	}
 
-	if res.maxValueSize <= 0 {
+	if res.maxValueSize <= 0 || res.maxValueSize > RedisValueSizeLimit {
 		res.maxValueSize = RedisValueSizeLimit
 	}
 

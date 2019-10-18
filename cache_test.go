@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	redis "github.com/go-redis/redis/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -112,6 +113,9 @@ func TestCache_MaxValueSize(t *testing.T) {
 			res, err = c.Get("key-Z", func() (Value, error) {
 				return sizedString("result-Zzzz"), nil
 			})
+			if s, ok := res.(string); ok {
+				res = sizedString(s)
+			}
 			assert.NoError(t, err)
 			assert.Equal(t, sizedString("result-Z"), res.(sizedString), "got cached value")
 
@@ -119,12 +123,18 @@ func TestCache_MaxValueSize(t *testing.T) {
 			res, err = c.Get("key-Big", func() (Value, error) {
 				return sizedString("1234567890"), nil
 			})
+			if s, ok := res.(string); ok {
+				res = sizedString(s)
+			}
 			assert.NoError(t, err)
 			assert.Equal(t, sizedString("1234567890"), res.(sizedString))
 
 			res, err = c.Get("key-Big", func() (Value, error) {
 				return sizedString("result-big"), nil
 			})
+			if s, ok := res.(string); ok {
+				res = sizedString(s)
+			}
 			assert.NoError(t, err)
 			assert.Equal(t, sizedString("result-big"), res.(sizedString), "got not cached value")
 
@@ -154,28 +164,39 @@ func TestCache_MaxCacheSize(t *testing.T) {
 				return sizedString("result-Z"), nil
 			})
 			assert.NoError(t, err)
+			if s, ok := res.(string); ok {
+				res = sizedString(s)
+			}
 			assert.Equal(t, sizedString("result-Z"), res.(sizedString))
-
 			res, err = c.Get("key-Z", func() (Value, error) {
 				return sizedString("result-Zzzz"), nil
 			})
+			if s, ok := res.(string); ok {
+				res = sizedString(s)
+			}
 			assert.NoError(t, err)
 			assert.Equal(t, sizedString("result-Z"), res.(sizedString), "got cached value")
-			assert.Equal(t, int64(8), c.size())
-
+			if _, ok := c.(*RedisCache); !ok {
+				assert.Equal(t, int64(8), c.size())
+			}
 			_, err = c.Get("key-Z2", func() (Value, error) {
 				return sizedString("result-Y"), nil
 			})
 			assert.Nil(t, err)
-			assert.Equal(t, int64(16), c.size())
+			if _, ok := c.(*RedisCache); !ok {
+				assert.Equal(t, int64(16), c.size())
+			}
 
 			// this will cause removal
 			_, err = c.Get("key-Z3", func() (Value, error) {
 				return sizedString("result-Z"), nil
 			})
 			assert.Nil(t, err)
-			assert.Equal(t, int64(16), c.size())
-			assert.Equal(t, 2, c.keys())
+			if _, ok := c.(*RedisCache); !ok {
+				assert.Equal(t, int64(16), c.size())
+				// Due RedisCache does not support MaxCacheSize this assert should be skipped
+				assert.Equal(t, 2, c.keys())
+			}
 		})
 	}
 }
@@ -371,11 +392,14 @@ func TestCache_Delete(t *testing.T) {
 				require.Nil(t, err)
 			}
 			assert.Equal(t, 1000, c.Stat().Keys)
-			assert.Equal(t, int64(9890), c.Stat().Size)
-
+			if _, ok := c.(*RedisCache); !ok {
+				assert.Equal(t, int64(9890), c.Stat().Size)
+			}
 			c.Delete("key-2")
 			assert.Equal(t, 999, c.Stat().Keys)
-			assert.Equal(t, int64(9890-8), c.Stat().Size)
+			if _, ok := c.(*RedisCache); !ok {
+				assert.Equal(t, int64(9890-8), c.Stat().Size)
+			}
 		})
 	}
 }
@@ -392,8 +416,12 @@ func TestCache_DeleteWithEvent(t *testing.T) {
 
 	caches := cachesTestList(t, OnEvicted(onEvict))
 	for _, c := range caches {
+
 		evKey, evVal, evCount = "", "", 0
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
+			if _, ok := c.(*RedisCache); ok {
+				t.Skip("RedisCache doesn't support delete events")
+			}
 			// fill cache
 			for i := 0; i < 1000; i++ {
 				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
@@ -425,25 +453,45 @@ func TestCache_Stats(t *testing.T) {
 				require.Nil(t, err)
 			}
 			stats := c.Stat()
-			assert.Equal(t, CacheStat{Hits: 0, Misses: 100, Keys: 100, Size: 890}, stats)
+			switch c.(type) {
+			case *RedisCache:
+				assert.Equal(t, CacheStat{Hits: 0, Misses: 100, Keys: 100, Size: 0}, stats)
+			default:
+				assert.Equal(t, CacheStat{Hits: 0, Misses: 100, Keys: 100, Size: 890}, stats)
+			}
 
 			_, err := c.Get("key-1", func() (Value, error) {
 				return "xyz", nil
 			})
 			require.NoError(t, err)
-			assert.Equal(t, CacheStat{Hits: 1, Misses: 100, Keys: 100, Size: 890}, c.Stat())
+			switch c.(type) {
+			case *RedisCache:
+				assert.Equal(t, CacheStat{Hits: 1, Misses: 100, Keys: 100, Size: 0}, c.Stat())
+			default:
+				assert.Equal(t, CacheStat{Hits: 1, Misses: 100, Keys: 100, Size: 890}, c.Stat())
+			}
 
 			_, err = c.Get("key-1123", func() (Value, error) {
 				return sizedString("xyz"), nil
 			})
 			require.NoError(t, err)
-			assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 893}, c.Stat())
+			switch c.(type) {
+			case *RedisCache:
+				assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 0}, c.Stat())
+			default:
+				assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 893}, c.Stat())
+			}
 
 			_, err = c.Get("key-9999", func() (Value, error) {
 				return nil, errors.New("err")
 			})
 			require.NotNil(t, err)
-			assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 893, Errors: 1}, c.Stat())
+			switch c.(type) {
+			case *RedisCache:
+				assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 0, Errors: 1}, c.Stat())
+			default:
+				assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 893, Errors: 1}, c.Stat())
+			}
 		})
 
 	}
@@ -515,9 +563,21 @@ func cachesTestList(t *testing.T, opts ...Option) []countedCache {
 	lc, err := NewLruCache(opts...)
 	require.NoError(t, err, "can't make lru cache")
 	caches = append(caches, lc)
+
+	server := newTestRedisServer()
+	client := redis.NewClient(&redis.Options{
+		Addr: server.Addr()})
+	rc, err := NewRedisCache(client, opts...)
+	require.NoError(t, err, "can't make redis cache")
+	caches = append(caches, rc)
+
 	return caches
 }
 
 type sizedString string
 
 func (s sizedString) Size() int { return len(s) }
+
+func (s sizedString) MarshalBinary() (data []byte, err error) {
+	return []byte(s), nil
+}

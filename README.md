@@ -3,26 +3,26 @@
 
 The library adds a thin layer on top of [lru cache](https://github.com/hashicorp/golang-lru) and [patrickmn/go-cache](https://github.com/patrickmn/go-cache).
 
-| Cache name     | Constructor           | Defaults          | Description           |
-| -------------- | --------------------- | ----------------- | --------------------- |
-| LruCache       | lcw.NewLruCache       | keys=1000         | LRU cache with limits |
-| ExpirableCache | lcw.NewExpirableCache | keys=1000, ttl=5m | TTL cache with limits |
-| Nop            | lcw.NewNopCache       |                   | Do-nothing cache      |
+| Cache name     | Constructor           | Defaults          | Description             |
+| -------------- | --------------------- | ----------------- | ----------------------- |
+| LruCache       | lcw.NewLruCache       | keys=1000         | LRU cache with limits   |
+| ExpirableCache | lcw.NewExpirableCache | keys=1000, ttl=5m | TTL cache with limits   |
+| RedisCache     | lcw.NewRedisCache     | ttl=5m            | Redis cache with limits |
+| Nop            | lcw.NewNopCache       |                   | Do-nothing cache        |
 
 
 Main features:
- 
 - LoadingCache (guava style)
 - Limit maximum cache size (in bytes)
 - Limit maximum key size
-- Limit maximum size of a value 
+- Limit maximum size of a value
 - Limit number of keys
-- TTL support (`ExpirableCache` only)
-- Callback on eviction event
+- TTL support (`ExpirableCache` and `RedisCache`)
+- Callback on eviction event (not supported in `RedisCache`)
 - Functional style invalidation
 - Functional options
 - Sane defaults
-  
+
 ## Install and update
 
 `go get -u github.com/go-pkgz/lcw`

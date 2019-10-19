@@ -56,7 +56,7 @@ func (c *RedisCache) Get(key string, fn func() (Value, error)) (data Value, err 
 			atomic.AddInt64(&c.Errors, 1)
 			return data, err
 		}
-	// RedisClient returns !nil when somthing goes wrong while get data
+	// RedisClient returns !nil when something goes wrong while get data
 	default:
 		atomic.AddInt64(&c.Errors, 1)
 		return v, getErr

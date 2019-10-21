@@ -45,6 +45,15 @@ s := val.(string) // cached value
 
 ```
 
+### Cache with URI
+
+Cache can be created with URIs:
+
+- `mem://lru?max_key_size=10&max_val_size=1024&max_keys=50&max_cache_size=64000` - creates LRU cache with given limits
+- `mem://expirable?ttl=30s&max_key_size=10&max_val_size=1024&max_keys=50&max_cache_size=64000` - create expirable cache
+- `redis://10.0.0.1:1234?db=16&password=qwerty&network=tcp4&dial_timeout=1s&read_timeout=5s&write_timeout=3s` - create redis cache
+- `nop://` - create Nop cache
+
 ## Details
 
 - All byte-size limits (MaxCacheSize and MaxValSize) only work for values implementing `lcw.Sizer` interface.

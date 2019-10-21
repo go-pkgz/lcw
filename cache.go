@@ -6,7 +6,9 @@
 // 3 flavors of cache provided - NoP (do-nothing cache), ExpirableCache (TTL based), and LruCache
 package lcw
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // Value type wraps interface{}
 type Value interface{}

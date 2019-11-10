@@ -82,6 +82,59 @@ func TestLruCache_BadOptions(t *testing.T) {
 	assert.EqualError(t, err, "failed to set cache option: negative ttl")
 }
 
+func TestLruCache_MaxKeysWithBus(t *testing.T) {
+
+	ps := &mockPubSub{}
+
+	var coldCalls int32
+	lc1, err := NewLruCache(MaxKeys(5), MaxValSize(10), EventBus(ps))
+	require.Nil(t, err)
+
+	lc2, err := NewLruCache(MaxKeys(50), MaxValSize(100), EventBus(ps))
+	require.Nil(t, err)
+
+	// put 5 keys to cache1
+	for i := 0; i < 5; i++ {
+		res, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+			atomic.AddInt32(&coldCalls, 1)
+			return fmt.Sprintf("result-%d", i), nil
+		})
+		assert.Nil(t, e)
+		assert.Equal(t, fmt.Sprintf("result-%d", i), res.(string))
+		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
+	}
+	// check if really cached
+	res, err := lc1.Get("key-3", func() (Value, error) {
+		return "result-blah", nil
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, "result-3", res.(string), "should be cached")
+
+	// put 1 key to cache2
+	res, e := lc2.Get(fmt.Sprintf("key-1"), func() (Value, error) {
+		return fmt.Sprintf("result-111"), nil
+	})
+	assert.Nil(t, e)
+	assert.Equal(t, fmt.Sprintf("result-111"), res.(string))
+
+	// try to cache1 after maxKeys reached, will remove key-0
+	res, err = lc1.Get("key-X", func() (Value, error) {
+		return "result-X", nil
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, "result-X", res.(string))
+	assert.Equal(t, 5, lc1.backend.Len())
+
+	assert.Equal(t, 1, lc2.backend.Len(), "cache2 still has key-1")
+
+	// try to cache1 after maxKeys reached, will remove key-1
+	res, err = lc1.Get("key-X2", func() (Value, error) {
+		return "result-X", nil
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, 1, lc2.backend.Len(), "cache2 removed key-1")
+}
+
 // LruCache illustrates the use of LRU loading cache
 func ExampleLruCache() {
 	// set up test server for single response

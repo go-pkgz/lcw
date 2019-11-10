@@ -1,10 +1,14 @@
 package lcw
 
 import (
+	"log"
 	"sync/atomic"
 
+	"github.com/google/uuid"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/pkg/errors"
+
+	"github.com/go-pkgz/lcw/eventbus"
 )
 
 // LruCache wraps lru.LruCache with loading cache Get and size limits
@@ -13,6 +17,7 @@ type LruCache struct {
 	CacheStat
 	backend     *lru.Cache
 	currentSize int64
+	id          string
 }
 
 // NewLruCache makes LRU LoadingCache implementation, 1000 max keys by default
@@ -21,12 +26,18 @@ func NewLruCache(opts ...Option) (*LruCache, error) {
 		options: options{
 			maxKeys:      1000,
 			maxValueSize: 0,
+			eventBus:     &eventbus.NopPubSub{},
 		},
+		id: uuid.New().String(),
 	}
 	for _, opt := range opts {
 		if err := opt(&res.options); err != nil {
 			return nil, errors.Wrap(err, "failed to set cache option")
 		}
+	}
+
+	if err := res.eventBus.Subscribe(res.onBusEvent); err != nil {
+		return nil, errors.Wrapf(err, "can't subscribe to event bus")
 	}
 
 	onEvicted := func(key interface{}, value interface{}) {
@@ -37,6 +48,7 @@ func NewLruCache(opts ...Option) (*LruCache, error) {
 			size := s.Size()
 			atomic.AddInt64(&res.currentSize, -1*int64(size))
 		}
+		_ = res.eventBus.Publish(res.id, key.(string))
 	}
 
 	var err error
@@ -129,6 +141,13 @@ func (c *LruCache) Stat() CacheStat {
 // Close does nothing for this type of cache
 func (c *LruCache) Close() error {
 	return nil
+}
+
+func (c *LruCache) onBusEvent(id, key string) {
+	log.Println("!! ", id, key)
+	if id != c.id { // prevent reaction on event from this cache
+		c.backend.Remove(key)
+	}
 }
 
 func (c *LruCache) size() int64 {

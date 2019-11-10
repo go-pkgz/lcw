@@ -112,3 +112,44 @@ func TestExpirableCache_BadOptions(t *testing.T) {
 	_, err = NewExpirableCache(TTL(-1))
 	assert.EqualError(t, err, "failed to set cache option: negative ttl")
 }
+
+func TestExpirableCacheWithBus(t *testing.T) {
+	ps := &mockPubSub{}
+	lc1, err := NewExpirableCache(MaxKeys(5), TTL(time.Millisecond*100), EventBus(ps))
+	require.NoError(t, err)
+
+	lc2, err := NewExpirableCache(MaxKeys(50), TTL(time.Millisecond*5000), EventBus(ps))
+	require.NoError(t, err)
+
+	// add 5 keys to the first node cache
+	for i := 0; i < 5; i++ {
+		_, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+			return fmt.Sprintf("result-%d", i), nil
+		})
+		assert.NoError(t, e)
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	assert.Equal(t, 0, len(ps.calledKeys), "no events")
+	assert.Equal(t, 5, lc1.Stat().Keys)
+	assert.Equal(t, int64(5), lc1.Stat().Misses)
+
+	// add key-1 key to the second node
+	_, e := lc2.Get(fmt.Sprintf("key-1"), func() (Value, error) {
+		return "result-111", nil
+	})
+	assert.NoError(t, e)
+	assert.Equal(t, 1, lc2.Stat().Keys)
+	assert.Equal(t, int64(1), lc2.Stat().Misses, lc2.Stat())
+
+	time.Sleep(55 * time.Millisecond) // let key-1 expire
+	assert.Equal(t, 1, len(ps.calledKeys), "1 event, key-0 expired")
+	assert.Equal(t, 4, lc1.Stat().Keys)
+	assert.Equal(t, 1, lc2.Stat().Keys, "key-1 still in cache2")
+
+	time.Sleep(210 * time.Millisecond) // let all keys expire
+	assert.Equal(t, 6, len(ps.calledKeys), "6 events, key-1 expired %+v", ps.calledKeys)
+	assert.Equal(t, 0, lc1.Stat().Keys)
+	assert.Equal(t, 0, lc2.Stat().Keys, "key-1 removed from cache2")
+
+}

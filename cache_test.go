@@ -656,3 +656,21 @@ func (s sizedString) Size() int { return len(s) }
 func (s sizedString) MarshalBinary() (data []byte, err error) {
 	return []byte(s), nil
 }
+
+type mockPubSub struct {
+	calledKeys []string
+	fns        []func(fromID string, key string)
+}
+
+func (m *mockPubSub) Subscribe(fn func(fromID string, key string)) error {
+	m.fns = append(m.fns, fn)
+	return nil
+}
+
+func (m *mockPubSub) Publish(fromID string, key string) error {
+	m.calledKeys = append(m.calledKeys, key)
+	for _, fn := range m.fns {
+		fn(fromID, key)
+	}
+	return nil
+}

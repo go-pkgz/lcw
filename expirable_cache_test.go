@@ -23,6 +23,7 @@ func TestExpirableCache(t *testing.T) {
 
 	assert.Equal(t, 5, lc.Stat().Keys)
 	assert.Equal(t, int64(5), lc.Stat().Misses)
+	assert.Equal(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, lc.Keys())
 
 	_, e := lc.Get("key-xx", func() (Value, error) {
 		return "result-xx", nil
@@ -36,6 +37,8 @@ func TestExpirableCache(t *testing.T) {
 
 	time.Sleep(210 * time.Millisecond)
 	assert.Equal(t, 0, lc.keys())
+	assert.Equal(t, []string{}, lc.Keys())
+
 }
 
 func TestExpirableCache_MaxKeys(t *testing.T) {

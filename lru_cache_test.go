@@ -28,6 +28,8 @@ func TestLruCache_MaxKeys(t *testing.T) {
 		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
 	}
 
+	assert.Equal(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, lc.Keys())
+
 	// check if really cached
 	res, err := lc.Get("key-3", func() (Value, error) {
 		return "result-blah", nil

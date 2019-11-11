@@ -3,6 +3,7 @@ package lcw
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"strings"
 	"sync"
@@ -671,6 +672,7 @@ func (m *mockPubSub) Publish(fromID string, key string) error {
 	m.calledKeys = append(m.calledKeys, key)
 	for _, fn := range m.fns {
 		fn(fromID, key)
+		log.Println("!!!", fromID, key)
 	}
 	return nil
 }

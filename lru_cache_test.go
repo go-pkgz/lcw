@@ -83,7 +83,6 @@ func TestLruCache_BadOptions(t *testing.T) {
 }
 
 func TestLruCache_MaxKeysWithBus(t *testing.T) {
-
 	ps := &mockPubSub{}
 
 	var coldCalls int32

@@ -38,6 +38,8 @@ func TestCache_Scopes(t *testing.T) {
 	})
 	assert.Nil(t, err)
 	assert.Equal(t, "value-upd", string(res), "was deleted, update")
+
+	assert.Equal(t, CacheStat{Hits: 1, Misses: 3, Keys: 2, Size: 0, Errors: 0}, lc.Stat())
 }
 
 func TestCache_Flush(t *testing.T) {
@@ -129,6 +131,10 @@ func TestScope_Key(t *testing.T) {
 			assert.Equal(t, tt.scopes, k.scopes)
 		})
 	}
+
+	// without partition
+	k := NewKey().ID("id1").Scopes("s1", "s2")
+	assert.Equal(t, "@@id1@@s1$$s2", k.String())
 
 	// parse invalid key strings
 	_, err := parseKey("abc")

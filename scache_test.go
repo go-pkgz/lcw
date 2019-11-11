@@ -1,13 +1,53 @@
 package lcw
 
 import (
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestCache_Scopes(t *testing.T) {
+func TestScache_Get(t *testing.T) {
+	lru, err := NewLruCache()
+	require.NoError(t, err)
+	lc := NewScache(lru)
+
+	var coldCalls int32
+
+	res, err := lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
+		atomic.AddInt32(&coldCalls, 1)
+		return []byte("result"), nil
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, "result", string(res))
+	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+
+	res, err = lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
+		atomic.AddInt32(&coldCalls, 1)
+		return []byte("result"), nil
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, "result", string(res))
+	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+
+	lc.Flush(Flusher("site"))
+	time.Sleep(100 * time.Millisecond) // let postFn to do its thing
+
+	_, err = lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
+		return nil, errors.New("err")
+	})
+	assert.NotNil(t, err)
+}
+
+func TestScache_Scopes(t *testing.T) {
 	lru, err := NewLruCache()
 	require.NoError(t, err)
 	lc := NewScache(lru)
@@ -42,7 +82,7 @@ func TestCache_Scopes(t *testing.T) {
 	assert.Equal(t, CacheStat{Hits: 1, Misses: 3, Keys: 2, Size: 0, Errors: 0}, lc.Stat())
 }
 
-func TestCache_Flush(t *testing.T) {
+func TestScache_Flush(t *testing.T) {
 	lru, err := NewLruCache()
 	require.NoError(t, err)
 	lc := NewScache(lru)
@@ -91,7 +131,7 @@ func TestCache_Flush(t *testing.T) {
 	}
 }
 
-func TestCache_FlushFailed(t *testing.T) {
+func TestScache_FlushFailed(t *testing.T) {
 	lru, err := NewLruCache()
 	require.NoError(t, err)
 	lc := NewScache(lru)
@@ -141,4 +181,99 @@ func TestScope_Key(t *testing.T) {
 	assert.Error(t, err)
 	_, err = parseKey("")
 	assert.Error(t, err)
+}
+
+func TestScache_Parallel(t *testing.T) {
+
+	var coldCalls int32
+	lru, err := NewLruCache()
+	require.NoError(t, err)
+	lc := NewScache(lru)
+
+	res, err := lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
+		return []byte("value"), nil
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, "value", string(res))
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		i := i
+		go func() {
+			defer wg.Done()
+			res, err := lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
+				atomic.AddInt32(&coldCalls, 1)
+				return []byte(fmt.Sprintf("result-%d", i)), nil
+			})
+			require.Nil(t, err)
+			require.Equal(t, "value", string(res))
+		}()
+	}
+	wg.Wait()
+	assert.Equal(t, int32(0), atomic.LoadInt32(&coldCalls))
+}
+
+// LruCache illustrates the use of LRU loading cache
+func ExampleScache() {
+
+	// load page function
+	loadURL := func(url string) ([]byte, error) {
+		resp, err := http.Get(url) // nolint
+		if err != nil {
+			return nil, err
+		}
+		_ = resp.Body.Close()
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		return b, nil
+	}
+
+	// fixed size LRU cache, 100 items, up to 10k in total size
+	backend, err := NewLruCache(MaxKeys(100), MaxCacheSize(10*1024))
+	if err != nil {
+		log.Fatalf("can't make lru cache, %v", err)
+	}
+
+	cache := NewScache(backend)
+
+	// url not in cache, load data
+	url := "https://radio-t.com/online/"
+	key := NewKey().ID(url).Scopes("test")
+	val, err := cache.Get(key, func() (val []byte, err error) {
+		return loadURL(url)
+	})
+	if err != nil {
+		log.Fatalf("can't load url %s, %v", url, err)
+	}
+	log.Print(string(val))
+
+	// url not in cache, load data
+	url = "https://radio-t.com/info/"
+	key = NewKey().ID(url).Scopes("test")
+	val, err = cache.Get(key, func() (val []byte, err error) {
+		return loadURL(url)
+	})
+	if err != nil {
+		log.Fatalf("can't load url %s, %v", url, err)
+	}
+	log.Print(string(val))
+
+	// url cached, skip load and get from the cache
+	url = "https://radio-t.com/online/"
+	key = NewKey().ID(url).Scopes("test")
+	val, err = cache.Get(key, func() (val []byte, err error) {
+		return loadURL(url)
+	})
+	if err != nil {
+		log.Fatalf("can't load url %s, %v", url, err)
+	}
+	log.Print(string(val))
+
+	// get cache stats
+	stats := cache.Stat()
+	log.Printf("%+v", stats)
+
 }

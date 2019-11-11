@@ -54,6 +54,15 @@ Cache can be created with URIs:
 - `redis://10.0.0.1:1234?db=16&password=qwerty&network=tcp4&dial_timeout=1s&read_timeout=5s&write_timeout=3s` - create redis cache
 - `nop://` - create Nop cache
 
+## Scoped cache
+
+`Scache` provides a wrapper on top of all implementations of `LoadingCache` with a number of special features:
+
+1. Key is not a string bye composed type made from partition, key-id and list of scopes (tags). 
+1. Value type limited to `[]byte`
+1. Added `Flush` method for scoped/tagged invalidation of multiple records in a given partition
+1. Simplified interface with Get, Stat and Flush only.
+
 ## Details
 
 - All byte-size limits (MaxCacheSize and MaxValSize) only work for values implementing `lcw.Sizer` interface.

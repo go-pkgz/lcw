@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -45,6 +46,10 @@ func TestExpirableRedisCache(t *testing.T) {
 
 	assert.Equal(t, 5, lc.Stat().Keys)
 	assert.Equal(t, int64(5), lc.Stat().Misses)
+
+	keys := lc.Keys()[:]
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
 	_, e := lc.Get("key-xx", func() (Value, error) {
 		return "result-xx", nil

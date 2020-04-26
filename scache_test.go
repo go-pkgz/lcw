@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -219,6 +220,16 @@ func TestScache_Parallel(t *testing.T) {
 
 // LruCache illustrates the use of LRU loading cache
 func ExampleScache() {
+	// set up test server for single response
+	var hitCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.String() == "/post/42" && hitCount == 0 {
+			_, _ = w.Write([]byte("<html><body>test response</body></html>"))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer ts.Close()
 
 	// load page function
 	loadURL := func(url string) ([]byte, error) {
@@ -243,7 +254,7 @@ func ExampleScache() {
 	cache := NewScache(backend)
 
 	// url not in cache, load data
-	url := "https://radio-t.com/online/"
+	url := ts.URL + "/post/42"
 	key := NewKey().ID(url).Scopes("test")
 	val, err := cache.Get(key, func() (val []byte, err error) {
 		return loadURL(url)
@@ -251,10 +262,9 @@ func ExampleScache() {
 	if err != nil {
 		log.Fatalf("can't load url %s, %v", url, err)
 	}
-	log.Print(string(val))
+	fmt.Println(string(val))
 
 	// url not in cache, load data
-	url = "https://radio-t.com/info/"
 	key = NewKey().ID(url).Scopes("test")
 	val, err = cache.Get(key, func() (val []byte, err error) {
 		return loadURL(url)
@@ -262,10 +272,9 @@ func ExampleScache() {
 	if err != nil {
 		log.Fatalf("can't load url %s, %v", url, err)
 	}
-	log.Print(string(val))
+	fmt.Println(string(val))
 
 	// url cached, skip load and get from the cache
-	url = "https://radio-t.com/online/"
 	key = NewKey().ID(url).Scopes("test")
 	val, err = cache.Get(key, func() (val []byte, err error) {
 		return loadURL(url)
@@ -273,9 +282,15 @@ func ExampleScache() {
 	if err != nil {
 		log.Fatalf("can't load url %s, %v", url, err)
 	}
-	log.Print(string(val))
+	fmt.Println(string(val))
 
 	// get cache stats
 	stats := cache.Stat()
-	log.Printf("%+v", stats)
+	fmt.Printf("%+v\n", stats)
+
+	// Output:
+	// <html><body>test response</body></html>
+	// <html><body>test response</body></html>
+	// <html><body>test response</body></html>
+	// {hits:2, misses:1, ratio:66.7%, keys:1, size:0, errors:0}
 }

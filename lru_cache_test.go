@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"sort"
 	"sync/atomic"
 	"testing"
@@ -83,6 +84,16 @@ func TestLruCache_BadOptions(t *testing.T) {
 
 // LruCache illustrates the use of LRU loading cache
 func ExampleLruCache() {
+	// set up test server for single response
+	var hitCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.String() == "/post/42" && hitCount == 0 {
+			_, _ = w.Write([]byte("<html><body>test response</body></html>"))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer ts.Close()
 
 	// load page function
 	loadURL := func(url string) (string, error) {
@@ -105,33 +116,40 @@ func ExampleLruCache() {
 	}
 
 	// url not in cache, load data
-	url := "https://radio-t.com/online/"
+	url := ts.URL + "/post/42"
 	val, err := cache.Get(url, func() (val Value, err error) {
 		return loadURL(url)
 	})
 	if err != nil {
 		log.Fatalf("can't load url %s, %v", url, err)
 	}
-	log.Print(val.(string))
+	fmt.Println(val.(string))
 
 	// url not in cache, load data
-	url = "https://radio-t.com/info/"
 	val, err = cache.Get(url, func() (val Value, err error) {
 		return loadURL(url)
 	})
 	if err != nil {
 		log.Fatalf("can't load url %s, %v", url, err)
 	}
-	log.Print(val.(string))
+	fmt.Println(val.(string))
 
 	// url cached, skip load and get from the cache
-	url = "https://radio-t.com/online/"
 	val, err = cache.Get(url, func() (val Value, err error) {
 		return loadURL(url)
 	})
 	if err != nil {
 		log.Fatalf("can't load url %s, %v", url, err)
 	}
-	log.Print(val.(string))
+	fmt.Println(val.(string))
 
+	// get cache stats
+	stats := cache.Stat()
+	fmt.Printf("%+v\n", stats)
+
+	// Output:
+	// <html><body>test response</body></html>
+	// <html><body>test response</body></html>
+	// <html><body>test response</body></html>
+	// {hits:2, misses:1, ratio:66.7%, keys:1, size:0, errors:0}
 }

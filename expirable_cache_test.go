@@ -43,7 +43,6 @@ func TestExpirableCache(t *testing.T) {
 	time.Sleep(210 * time.Millisecond)
 	assert.Equal(t, 0, lc.keys())
 	assert.Equal(t, []string{}, lc.Keys())
-
 }
 
 func TestExpirableCache_MaxKeys(t *testing.T) {

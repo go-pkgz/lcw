@@ -58,7 +58,8 @@ func TestStat_String(t *testing.T) {
 }
 
 func TestCache_Get(t *testing.T) {
-	caches := cachesTestList(t)
+	caches, teardown := cachesTestList(t)
+	defer teardown()
 
 	for _, c := range caches {
 		c := c
@@ -99,7 +100,8 @@ func TestCache_Get(t *testing.T) {
 }
 
 func TestCache_MaxValueSize(t *testing.T) {
-	caches := cachesTestList(t, MaxKeys(5), MaxValSize(10))
+	caches, teardown := cachesTestList(t, MaxKeys(5), MaxValSize(10))
+	defer teardown()
 
 	for _, c := range caches {
 		c := c
@@ -156,7 +158,8 @@ func TestCache_MaxValueSize(t *testing.T) {
 }
 
 func TestCache_MaxCacheSize(t *testing.T) {
-	caches := cachesTestList(t, MaxKeys(50), MaxCacheSize(20))
+	caches, teardown := cachesTestList(t, MaxKeys(50), MaxCacheSize(20))
+	defer teardown()
 
 	for _, c := range caches {
 		c := c
@@ -204,8 +207,8 @@ func TestCache_MaxCacheSize(t *testing.T) {
 }
 
 func TestCache_MaxCacheSizeParallel(t *testing.T) {
-
-	caches := cachesTestList(t, MaxCacheSize(123), MaxKeys(10000))
+	caches, teardown := cachesTestList(t, MaxCacheSize(123), MaxKeys(10000))
+	defer teardown()
 
 	for _, c := range caches {
 		c := c
@@ -235,7 +238,8 @@ func TestCache_MaxCacheSizeParallel(t *testing.T) {
 }
 
 func TestCache_MaxKeySize(t *testing.T) {
-	caches := cachesTestList(t, MaxKeySize(5))
+	caches, teardown := cachesTestList(t, MaxKeySize(5))
+	defer teardown()
 
 	for _, c := range caches {
 		c := c
@@ -268,7 +272,9 @@ func TestCache_MaxKeySize(t *testing.T) {
 }
 
 func TestCache_Peek(t *testing.T) {
-	caches := cachesTestList(t)
+	caches, teardown := cachesTestList(t)
+	defer teardown()
+
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
@@ -286,11 +292,12 @@ func TestCache_Peek(t *testing.T) {
 			assert.Equal(t, "result", r.(string))
 		})
 	}
-
 }
 
 func TestLruCache_ParallelHits(t *testing.T) {
-	caches := cachesTestList(t)
+	caches, teardown := cachesTestList(t)
+	defer teardown()
+
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
@@ -323,8 +330,9 @@ func TestLruCache_ParallelHits(t *testing.T) {
 }
 
 func TestCache_Purge(t *testing.T) {
+	caches, teardown := cachesTestList(t)
+	defer teardown()
 
-	caches := cachesTestList(t)
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
@@ -348,8 +356,9 @@ func TestCache_Purge(t *testing.T) {
 }
 
 func TestCache_Invalidate(t *testing.T) {
+	caches, teardown := cachesTestList(t)
+	defer teardown()
 
-	caches := cachesTestList(t)
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
@@ -390,8 +399,9 @@ func TestCache_Invalidate(t *testing.T) {
 }
 
 func TestCache_Delete(t *testing.T) {
+	caches, teardown := cachesTestList(t)
+	defer teardown()
 
-	caches := cachesTestList(t)
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
@@ -426,7 +436,9 @@ func TestCache_DeleteWithEvent(t *testing.T) {
 		evCount++
 	}
 
-	caches := cachesTestList(t, OnEvicted(onEvict))
+	caches, teardown := cachesTestList(t, OnEvicted(onEvict))
+	defer teardown()
+
 	for _, c := range caches {
 		c := c
 
@@ -456,7 +468,9 @@ func TestCache_DeleteWithEvent(t *testing.T) {
 }
 
 func TestCache_Stats(t *testing.T) {
-	caches := cachesTestList(t)
+	caches, teardown := cachesTestList(t)
+	defer teardown()
+
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
@@ -509,7 +523,6 @@ func TestCache_Stats(t *testing.T) {
 				assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 893, Errors: 1}, c.Stat())
 			}
 		})
-
 	}
 }
 
@@ -541,7 +554,6 @@ func ExampleLoadingCache_Get() {
 }
 
 func ExampleLoadingCache_Delete() {
-
 	// make expirable cache (30m TTL) with up to 10 keys. Set callback on eviction event
 	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30), OnEvicted(func(key string, value Value) {
 		fmt.Println("key " + key + " evicted")
@@ -549,6 +561,7 @@ func ExampleLoadingCache_Delete() {
 	if err != nil {
 		panic("can' make cache")
 	}
+	defer c.Close()
 
 	// try to get from cache and because mykey is not in will put it
 	_, _ = c.Get("mykey", func() (Value, error) {
@@ -571,7 +584,7 @@ type countedCache interface {
 	counts
 }
 
-func cachesTestList(t *testing.T, opts ...Option) []countedCache {
+func cachesTestList(t *testing.T, opts ...Option) ([]countedCache, func()) {
 	var caches []countedCache
 	ec, err := NewExpirableCache(opts...)
 	require.NoError(t, err, "can't make exp cache")
@@ -587,7 +600,10 @@ func cachesTestList(t *testing.T, opts ...Option) []countedCache {
 	require.NoError(t, err, "can't make redis cache")
 	caches = append(caches, rc)
 
-	return caches
+	return caches, func() {
+		_ = client.Close()
+		server.Close()
+	}
 }
 
 type sizedString string

@@ -188,7 +188,6 @@ func TestScope_Key(t *testing.T) {
 }
 
 func TestScache_Parallel(t *testing.T) {
-
 	var coldCalls int32
 	lru, err := NewLruCache()
 	require.NoError(t, err)

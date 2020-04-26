@@ -33,7 +33,6 @@ func (m *Scache) Stat() CacheStat {
 
 // Flush clears cache and calls postFlushFn async
 func (m *Scache) Flush(req FlusherRequest) {
-
 	if len(req.scopes) == 0 {
 		m.lc.Purge()
 		return

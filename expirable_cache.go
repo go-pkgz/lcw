@@ -18,7 +18,6 @@ type ExpirableCache struct {
 
 // NewExpirableCache makes expirable LoadingCache implementation, 1000 max keys by default and 5s TTL
 func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
-
 	res := ExpirableCache{
 		options: options{
 			maxKeys:      1000,
@@ -51,7 +50,6 @@ func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
 
 // Get gets value by key or load with fn if not found in cache
 func (c *ExpirableCache) Get(key string, fn func() (Value, error)) (data Value, err error) {
-
 	if v, ok := c.backend.Get(key); ok {
 		atomic.AddInt64(&c.Hits, 1)
 		return v, nil
@@ -121,6 +119,11 @@ func (c *ExpirableCache) Stat() CacheStat {
 		Keys:   c.keys(),
 		Errors: c.Errors,
 	}
+}
+
+// Close does nothing for this type of cache
+func (c *ExpirableCache) Close() error {
+	return nil
 }
 
 func (c *ExpirableCache) size() int64 {

@@ -68,7 +68,7 @@ func (n *Nop) Purge() {}
 // Delete does nothing for nop cache
 func (n *Nop) Delete(key string) {}
 
-// Delete does nothing for nop cache
+// Keys does nothing for nop cache
 func (n *Nop) Keys() []string { return nil }
 
 // Stat always 0s for nop cache

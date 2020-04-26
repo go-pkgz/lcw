@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis"
-	redis "github.com/go-redis/redis/v7"
+	"github.com/go-redis/redis/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -37,6 +37,7 @@ func TestExpirableRedisCache(t *testing.T) {
 	}
 	require.NoError(t, err)
 	for i := 0; i < 5; i++ {
+		i := i
 		_, e := lc.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 			return fmt.Sprintf("result-%d", i), nil
 		})
@@ -78,11 +79,12 @@ func TestRedisCache(t *testing.T) {
 	}
 	// put 5 keys to cache
 	for i := 0; i < 5; i++ {
+		i := i
 		res, e := lc.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 			atomic.AddInt32(&coldCalls, 1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
-		assert.Nil(t, e)
+		assert.NoError(t, e)
 		assert.Equal(t, fmt.Sprintf("result-%d", i), res.(string))
 		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
 	}
@@ -91,14 +93,14 @@ func TestRedisCache(t *testing.T) {
 	res, err := lc.Get("key-3", func() (Value, error) {
 		return "result-blah", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result-3", res.(string), "should be cached")
 
 	// try to cache after maxKeys reached
 	res, err = lc.Get("key-X", func() (Value, error) {
 		return "result-X", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result-X", res.(string))
 	assert.Equal(t, int64(5), lc.backend.DBSize().Val())
 
@@ -106,20 +108,20 @@ func TestRedisCache(t *testing.T) {
 	res, err = lc.Get("key-Z", func() (Value, error) {
 		return "result-Z", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result-Z", res.(string))
 
 	res, err = lc.Get("key-Z", func() (Value, error) {
 		return "result-Zzzz", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result-Zzzz", res.(string), "got non-cached value")
 	assert.Equal(t, 5, lc.keys())
 
 	res, err = lc.Get("key-Zzzzzzz", func() (Value, error) {
 		return "result-Zzzz", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result-Zzzz", res.(string), "got non-cached value")
 	assert.Equal(t, 5, lc.keys())
 
@@ -141,14 +143,14 @@ func TestRedisCacheErrors(t *testing.T) {
 	res, err := lc.Get("error-key-Z", func() (Value, error) {
 		return "error-result-Z", errors.New("some error")
 	})
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	assert.Equal(t, "error-result-Z", res.(string))
 	assert.Equal(t, int64(1), lc.Stat().Errors)
 
 	res, err = lc.Get("error-key-Z2", func() (Value, error) {
 		return fakeString("error-result-Z2"), nil
 	})
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	assert.Equal(t, fakeString("error-result-Z2"), res.(fakeString))
 	assert.Equal(t, int64(2), lc.Stat().Errors)
 
@@ -156,7 +158,7 @@ func TestRedisCacheErrors(t *testing.T) {
 	res, err = lc.Get("error-key-Z3", func() (Value, error) {
 		return fakeString("error-result-Z3"), nil
 	})
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	assert.Equal(t, "", res.(string))
 	assert.Equal(t, int64(3), lc.Stat().Errors)
 }

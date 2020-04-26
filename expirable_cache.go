@@ -4,7 +4,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	cache "github.com/patrickmn/go-cache"
+	"github.com/patrickmn/go-cache"
 	"github.com/pkg/errors"
 )
 
@@ -102,6 +102,7 @@ func (c *ExpirableCache) Delete(key string) {
 	c.backend.Delete(key)
 }
 
+// Keys returns cache keys
 func (c *ExpirableCache) Keys() (res []string) {
 	items := c.backend.Items()
 	res = make([]string, 0, len(items))

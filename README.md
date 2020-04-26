@@ -58,14 +58,14 @@ Cache can be created with URIs:
 
 `Scache` provides a wrapper on top of all implementations of `LoadingCache` with a number of special features:
 
-1. Key is not a string but a composed type made from partition, key-id and list of scopes (tags). 
+1. Key is not a string, but a composed type made from partition, key-id and list of scopes (tags). 
 1. Value type limited to `[]byte`
 1. Added `Flush` method for scoped/tagged invalidation of multiple records in a given partition
-1. Simplified interface with Get, Stat and Flush only.
+1. A simplified interface with Get, Stat and Flush only.
 
 ## Details
 
 - All byte-size limits (MaxCacheSize and MaxValSize) only work for values implementing `lcw.Sizer` interface.
 - Negative limits (max options) rejected
 - `lgr.Value` wraps `interface{}` and should be converted back to the concrete type.
-- The implementation started as a part of [remark42](https://github.com/umputun/remark) and later on moved to [go-pkgz/rest](https://github.com/go-pkgz/rest/tree/master/cache) library and finaly generalized to become `lcw`.
+- The implementation started as a part of [remark42](https://github.com/umputun/remark) and later on moved to [go-pkgz/rest](https://github.com/go-pkgz/rest/tree/master/cache) library and finally generalized to become `lcw`.

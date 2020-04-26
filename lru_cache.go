@@ -104,6 +104,7 @@ func (c *LruCache) Delete(key string) {
 	c.backend.Remove(key)
 }
 
+// Keys returns cache keys
 func (c *LruCache) Keys() (res []string) {
 	keys := c.backend.Keys()
 	res = make([]string, 0, len(keys))

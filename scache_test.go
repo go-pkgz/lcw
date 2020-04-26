@@ -26,7 +26,7 @@ func TestScache_Get(t *testing.T) {
 		atomic.AddInt32(&coldCalls, 1)
 		return []byte("result"), nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result", string(res))
 	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
 
@@ -34,7 +34,7 @@ func TestScache_Get(t *testing.T) {
 		atomic.AddInt32(&coldCalls, 1)
 		return []byte("result"), nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result", string(res))
 	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
 
@@ -44,7 +44,7 @@ func TestScache_Get(t *testing.T) {
 	_, err = lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
 		return nil, errors.New("err")
 	})
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 }
 
 func TestScache_Scopes(t *testing.T) {
@@ -55,13 +55,13 @@ func TestScache_Scopes(t *testing.T) {
 	res, err := lc.Get(NewKey("site").ID("key").Scopes("s1", "s2"), func() ([]byte, error) {
 		return []byte("value"), nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "value", string(res))
 
 	res, err = lc.Get(NewKey("site").ID("key2").Scopes("s2"), func() ([]byte, error) {
 		return []byte("value2"), nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "value2", string(res))
 
 	assert.Equal(t, 2, len(lc.lc.Keys()))
@@ -72,11 +72,11 @@ func TestScache_Scopes(t *testing.T) {
 		assert.Fail(t, "should stay")
 		return nil, nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	res, err = lc.Get(NewKey("site").ID("key").Scopes("s1", "s2"), func() ([]byte, error) {
 		return []byte("value-upd"), nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "value-upd", string(res), "was deleted, update")
 
 	assert.Equal(t, CacheStat{Hits: 1, Misses: 3, Keys: 2, Size: 0, Errors: 0}, lc.Stat())
@@ -91,7 +91,7 @@ func TestScache_Flush(t *testing.T) {
 		res, err := lc.Get(NewKey("site").ID(id).Scopes(scopes...), func() ([]byte, error) {
 			return []byte("value" + id), nil
 		})
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.Equal(t, "value"+id, string(res))
 	}
 
@@ -123,6 +123,8 @@ func TestScache_Flush(t *testing.T) {
 	}
 
 	for i, tt := range tbl {
+		tt := tt
+		i := i
 		t.Run(tt.msg, func(t *testing.T) {
 			init()
 			lc.Flush(Flusher("site").Scopes(tt.scopes...))
@@ -139,7 +141,7 @@ func TestScache_FlushFailed(t *testing.T) {
 	val, err := lc.Get(NewKey("site").ID("invalid-composite"), func() ([]byte, error) {
 		return []byte("value"), nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "value", string(val))
 	assert.Equal(t, 1, len(lc.lc.Keys()))
 
@@ -161,6 +163,7 @@ func TestScope_Key(t *testing.T) {
 	}
 
 	for _, tt := range tbl {
+		tt := tt
 		t.Run(tt.full, func(t *testing.T) {
 			k := NewKey(tt.partition).ID(tt.key).Scopes(tt.scopes...)
 			assert.Equal(t, tt.full, k.String())
@@ -193,7 +196,7 @@ func TestScache_Parallel(t *testing.T) {
 	res, err := lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
 		return []byte("value"), nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "value", string(res))
 
 	wg := sync.WaitGroup{}
@@ -206,7 +209,7 @@ func TestScache_Parallel(t *testing.T) {
 				atomic.AddInt32(&coldCalls, 1)
 				return []byte(fmt.Sprintf("result-%d", i)), nil
 			})
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.Equal(t, "value", string(res))
 		}()
 	}
@@ -223,8 +226,8 @@ func ExampleScache() {
 		if err != nil {
 			return nil, err
 		}
-		_ = resp.Body.Close()
 		b, err := ioutil.ReadAll(resp.Body)
+		_ = resp.Body.Close()
 		if err != nil {
 			return nil, err
 		}
@@ -275,5 +278,4 @@ func ExampleScache() {
 	// get cache stats
 	stats := cache.Stat()
 	log.Printf("%+v", stats)
-
 }

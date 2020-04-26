@@ -4,7 +4,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	redis "github.com/go-redis/redis/v7"
+	"github.com/go-redis/redis/v7"
 	"github.com/pkg/errors"
 )
 

@@ -15,6 +15,7 @@ func TestExpirableCache(t *testing.T) {
 	lc, err := NewExpirableCache(MaxKeys(5), TTL(time.Millisecond*100))
 	require.NoError(t, err)
 	for i := 0; i < 5; i++ {
+		i := i
 		_, e := lc.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 			return fmt.Sprintf("result-%d", i), nil
 		})
@@ -42,21 +43,21 @@ func TestExpirableCache(t *testing.T) {
 	time.Sleep(210 * time.Millisecond)
 	assert.Equal(t, 0, lc.keys())
 	assert.Equal(t, []string{}, lc.Keys())
-
 }
 
 func TestExpirableCache_MaxKeys(t *testing.T) {
 	var coldCalls int32
 	lc, err := NewExpirableCache(MaxKeys(5), MaxValSize(10))
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// put 5 keys to cache
 	for i := 0; i < 5; i++ {
+		i := i
 		res, e := lc.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 			atomic.AddInt32(&coldCalls, 1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
-		assert.Nil(t, e)
+		assert.NoError(t, e)
 		assert.Equal(t, fmt.Sprintf("result-%d", i), res.(string))
 		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
 	}
@@ -65,14 +66,14 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	res, err := lc.Get("key-3", func() (Value, error) {
 		return "result-blah", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result-3", res.(string), "should be cached")
 
 	// try to cache after maxKeys reached
 	res, err = lc.Get("key-X", func() (Value, error) {
 		return "result-X", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result-X", res.(string))
 	assert.Equal(t, 5, lc.keys())
 
@@ -80,13 +81,13 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	res, err = lc.Get("key-Z", func() (Value, error) {
 		return "result-Z", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result-Z", res.(string))
 
 	res, err = lc.Get("key-Z", func() (Value, error) {
 		return "result-Zzzz", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result-Zzzz", res.(string), "got non-cached value")
 	assert.Equal(t, 5, lc.keys())
 }

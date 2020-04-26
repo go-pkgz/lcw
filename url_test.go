@@ -29,12 +29,13 @@ func TestUrl_optionsFromQuery(t *testing.T) {
 	}
 
 	for i, tt := range tbl {
+		tt := tt
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			u, err := url.Parse(tt.url)
 			require.NoError(t, err)
 			r, err := optionsFromQuery(u.Query())
 			if tt.fail {
-				require.NotNil(t, err)
+				require.Error(t, err)
 				return
 			}
 			assert.Equal(t, tt.num, len(r))
@@ -58,14 +59,16 @@ func TestUrl_redisOptionsFromURL(t *testing.T) {
 	}
 
 	for i, tt := range tbl {
+		tt := tt
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			u, err := url.Parse(tt.url)
 			require.NoError(t, err)
 			r, err := redisOptionsFromURL(u)
 			if tt.fail {
-				require.NotNil(t, err)
+				require.Error(t, err)
 				return
 			}
+			require.NoError(t, err)
 			assert.Equal(t, tt.opts, *r)
 		})
 	}
@@ -84,6 +87,7 @@ func TestUrl_NewExpirable(t *testing.T) {
 	u := "mem://expirable?max_keys=10&ttl=30m"
 	res, err := New(u)
 	require.NoError(t, err)
+	defer res.Close()
 	r, ok := res.(*ExpirableCache)
 	require.True(t, ok)
 	assert.Equal(t, 10, r.maxKeys)
@@ -100,21 +104,25 @@ func TestUrl_NewNop(t *testing.T) {
 
 func TestUrl_NewRedis(t *testing.T) {
 	srv := newTestRedisServer()
+	defer srv.Close()
 	u := fmt.Sprintf("redis://%s?db=1&ttl=10s", srv.Addr())
 	res, err := New(u)
 	require.NoError(t, err)
+	defer res.Close()
 	r, ok := res.(*RedisCache)
 	require.True(t, ok)
 	assert.Equal(t, 10*time.Second, r.ttl)
 
 	u = fmt.Sprintf("redis://%s?db=1&ttl=zz10s", srv.Addr())
 	_, err = New(u)
-	require.NotNil(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ttl query param zz10s: time: invalid duration zz10s")
 
 	_, err = New("redis://localhost:xxx?db=1")
-	require.NotNil(t, err)
-	assert.EqualError(t, err, "parse cache uri redis://localhost:xxx?db=1: parse redis://localhost:xxx?db=1: invalid port \":xxx\" after host")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parse cache uri redis://localhost:xxx?db=1: parse")
+	assert.Contains(t, err.Error(), "redis://localhost:xxx?db=1")
+	assert.Contains(t, err.Error(), "invalid port \":xxx\" after host")
 }
 
 func TestUrl_NewFailed(t *testing.T) {
@@ -129,5 +137,4 @@ func TestUrl_NewFailed(t *testing.T) {
 	u = "mem://lru?max_keys=xyz"
 	_, err = New(u)
 	require.EqualError(t, err, "parse uri options mem://lru?max_keys=xyz: 1 error occurred:\n\t* max_keys query param xyz: strconv.Atoi: parsing \"xyz\": invalid syntax\n\n")
-
 }

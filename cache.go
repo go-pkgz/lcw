@@ -28,6 +28,7 @@ type LoadingCache interface {
 	Purge()                                                          // clear cache
 	Stat() CacheStat                                                 // cache stats
 	Keys() []string                                                  // list of all keys
+	Close() error                                                    // close open connections
 }
 
 // CacheStat represent stats values
@@ -68,10 +69,15 @@ func (n *Nop) Purge() {}
 // Delete does nothing for nop cache
 func (n *Nop) Delete(key string) {}
 
-// Delete does nothing for nop cache
+// Keys does nothing for nop cache
 func (n *Nop) Keys() []string { return nil }
 
 // Stat always 0s for nop cache
 func (n *Nop) Stat() CacheStat {
 	return CacheStat{}
+}
+
+// Close does nothing for nop cache
+func (n *Nop) Close() error {
+	return nil
 }

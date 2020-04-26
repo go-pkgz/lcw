@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	redis "github.com/go-redis/redis/v7"
+	"github.com/go-redis/redis/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +22,7 @@ func TestNop_Get(t *testing.T) {
 		atomic.AddInt32(&coldCalls, 1)
 		return "result", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result", res.(string))
 	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
 
@@ -30,7 +30,7 @@ func TestNop_Get(t *testing.T) {
 		atomic.AddInt32(&coldCalls, 1)
 		return "result2", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result2", res.(string))
 	assert.Equal(t, int32(2), atomic.LoadInt32(&coldCalls))
 
@@ -44,7 +44,7 @@ func TestNop_Peek(t *testing.T) {
 		atomic.AddInt32(&coldCalls, 1)
 		return "result", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result", res.(string))
 	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
 
@@ -58,17 +58,18 @@ func TestStat_String(t *testing.T) {
 }
 
 func TestCache_Get(t *testing.T) {
-
-	caches := cachesTestList(t)
+	caches, teardown := cachesTestList(t)
+	defer teardown()
 
 	for _, c := range caches {
+		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			var coldCalls int32
 			res, err := c.Get("key", func() (Value, error) {
 				atomic.AddInt32(&coldCalls, 1)
 				return "result", nil
 			})
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.Equal(t, "result", res.(string))
 			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
 
@@ -77,7 +78,7 @@ func TestCache_Get(t *testing.T) {
 				return "result2", nil
 			})
 
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.Equal(t, "result", res.(string))
 			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls), "cache hit")
 
@@ -85,23 +86,25 @@ func TestCache_Get(t *testing.T) {
 				atomic.AddInt32(&coldCalls, 1)
 				return "result2", errors.New("some error")
 			})
-			assert.NotNil(t, err)
+			assert.Error(t, err)
 			assert.Equal(t, int32(2), atomic.LoadInt32(&coldCalls), "cache hit")
 
 			_, err = c.Get("key-2", func() (Value, error) {
 				atomic.AddInt32(&coldCalls, 1)
 				return "result2", errors.New("some error")
 			})
-			assert.NotNil(t, err)
+			assert.Error(t, err)
 			assert.Equal(t, int32(3), atomic.LoadInt32(&coldCalls), "cache hit")
 		})
 	}
 }
 
 func TestCache_MaxValueSize(t *testing.T) {
-	caches := cachesTestList(t, MaxKeys(5), MaxValSize(10))
+	caches, teardown := cachesTestList(t, MaxKeys(5), MaxValSize(10))
+	defer teardown()
 
 	for _, c := range caches {
+		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			// put good size value to cache and make sure it cached
 			res, err := c.Get("key-Z", func() (Value, error) {
@@ -155,9 +158,11 @@ func TestCache_MaxValueSize(t *testing.T) {
 }
 
 func TestCache_MaxCacheSize(t *testing.T) {
-	caches := cachesTestList(t, MaxKeys(50), MaxCacheSize(20))
+	caches, teardown := cachesTestList(t, MaxKeys(50), MaxCacheSize(20))
+	defer teardown()
 
 	for _, c := range caches {
+		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			// put good size value to cache and make sure it cached
 			res, err := c.Get("key-Z", func() (Value, error) {
@@ -182,7 +187,7 @@ func TestCache_MaxCacheSize(t *testing.T) {
 			_, err = c.Get("key-Z2", func() (Value, error) {
 				return sizedString("result-Y"), nil
 			})
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			if _, ok := c.(*RedisCache); !ok {
 				assert.Equal(t, int64(16), c.size())
 			}
@@ -191,7 +196,7 @@ func TestCache_MaxCacheSize(t *testing.T) {
 			_, err = c.Get("key-Z3", func() (Value, error) {
 				return sizedString("result-Z"), nil
 			})
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			if _, ok := c.(*RedisCache); !ok {
 				assert.Equal(t, int64(16), c.size())
 				// Due RedisCache does not support MaxCacheSize this assert should be skipped
@@ -202,10 +207,11 @@ func TestCache_MaxCacheSize(t *testing.T) {
 }
 
 func TestCache_MaxCacheSizeParallel(t *testing.T) {
-
-	caches := cachesTestList(t, MaxCacheSize(123), MaxKeys(10000))
+	caches, teardown := cachesTestList(t, MaxCacheSize(123), MaxKeys(10000))
+	defer teardown()
 
 	for _, c := range caches {
+		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			wg := sync.WaitGroup{}
 			for i := 0; i < 1000; i++ {
@@ -217,7 +223,7 @@ func TestCache_MaxCacheSizeParallel(t *testing.T) {
 					res, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 						return sizedString(fmt.Sprintf("result-%d", i)), nil
 					})
-					require.Nil(t, err)
+					require.NoError(t, err)
 					require.Equal(t, sizedString(fmt.Sprintf("result-%d", i)), res.(sizedString))
 					size := c.size()
 					require.True(t, size < 200 && size >= 0, "unexpected size=%d", size) // won't be exactly 123 due parallel
@@ -232,47 +238,52 @@ func TestCache_MaxCacheSizeParallel(t *testing.T) {
 }
 
 func TestCache_MaxKeySize(t *testing.T) {
-	caches := cachesTestList(t, MaxKeySize(5))
+	caches, teardown := cachesTestList(t, MaxKeySize(5))
+	defer teardown()
 
 	for _, c := range caches {
+		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			res, err := c.Get("key", func() (Value, error) {
 				return "value", nil
 			})
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.Equal(t, "value", res.(string))
 
 			res, err = c.Get("key", func() (Value, error) {
 				return "valueXXX", nil
 			})
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.Equal(t, "value", res.(string), "cached")
 
 			res, err = c.Get("key1234", func() (Value, error) {
 				return "value", nil
 			})
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.Equal(t, "value", res.(string))
 
 			res, err = c.Get("key1234", func() (Value, error) {
 				return "valueXYZ", nil
 			})
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.Equal(t, "valueXYZ", res.(string), "not cached")
 		})
 	}
 }
 
 func TestCache_Peek(t *testing.T) {
-	caches := cachesTestList(t)
+	caches, teardown := cachesTestList(t)
+	defer teardown()
+
 	for _, c := range caches {
+		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			var coldCalls int32
 			res, err := c.Get("key", func() (Value, error) {
 				atomic.AddInt32(&coldCalls, 1)
 				return "result", nil
 			})
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.Equal(t, "result", res.(string))
 			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
 
@@ -281,19 +292,21 @@ func TestCache_Peek(t *testing.T) {
 			assert.Equal(t, "result", r.(string))
 		})
 	}
-
 }
 
 func TestLruCache_ParallelHits(t *testing.T) {
-	caches := cachesTestList(t)
+	caches, teardown := cachesTestList(t)
+	defer teardown()
+
 	for _, c := range caches {
+		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			var coldCalls int32
 
 			res, err := c.Get("key", func() (Value, error) {
 				return "value", nil
 			})
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.Equal(t, "value", res.(string))
 
 			wg := sync.WaitGroup{}
@@ -306,7 +319,7 @@ func TestLruCache_ParallelHits(t *testing.T) {
 						atomic.AddInt32(&coldCalls, 1)
 						return fmt.Sprintf("result-%d", i), nil
 					})
-					require.Nil(t, err)
+					require.NoError(t, err)
 					require.Equal(t, "value", res.(string))
 				}()
 			}
@@ -317,18 +330,21 @@ func TestLruCache_ParallelHits(t *testing.T) {
 }
 
 func TestCache_Purge(t *testing.T) {
+	caches, teardown := cachesTestList(t)
+	defer teardown()
 
-	caches := cachesTestList(t)
 	for _, c := range caches {
+		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			var coldCalls int32
 			// fill cache
 			for i := 0; i < 1000; i++ {
+				i := i
 				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 					atomic.AddInt32(&coldCalls, 1)
 					return fmt.Sprintf("result-%d", i), nil
 				})
-				require.Nil(t, err)
+				require.NoError(t, err)
 			}
 			assert.Equal(t, int32(1000), atomic.LoadInt32(&coldCalls))
 			assert.Equal(t, 1000, c.keys())
@@ -340,19 +356,22 @@ func TestCache_Purge(t *testing.T) {
 }
 
 func TestCache_Invalidate(t *testing.T) {
+	caches, teardown := cachesTestList(t)
+	defer teardown()
 
-	caches := cachesTestList(t)
 	for _, c := range caches {
+		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			var coldCalls int32
 
 			// fill cache
 			for i := 0; i < 1000; i++ {
+				i := i
 				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 					atomic.AddInt32(&coldCalls, 1)
 					return fmt.Sprintf("result-%d", i), nil
 				})
-				require.Nil(t, err)
+				require.NoError(t, err)
 			}
 			assert.Equal(t, int32(1000), atomic.LoadInt32(&coldCalls))
 			assert.Equal(t, 1000, c.keys())
@@ -380,16 +399,19 @@ func TestCache_Invalidate(t *testing.T) {
 }
 
 func TestCache_Delete(t *testing.T) {
+	caches, teardown := cachesTestList(t)
+	defer teardown()
 
-	caches := cachesTestList(t)
 	for _, c := range caches {
+		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			// fill cache
 			for i := 0; i < 1000; i++ {
+				i := i
 				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 					return sizedString(fmt.Sprintf("result-%d", i)), nil
 				})
-				require.Nil(t, err)
+				require.NoError(t, err)
 			}
 			assert.Equal(t, 1000, c.Stat().Keys)
 			if _, ok := c.(*RedisCache); !ok {
@@ -414,8 +436,11 @@ func TestCache_DeleteWithEvent(t *testing.T) {
 		evCount++
 	}
 
-	caches := cachesTestList(t, OnEvicted(onEvict))
+	caches, teardown := cachesTestList(t, OnEvicted(onEvict))
+	defer teardown()
+
 	for _, c := range caches {
+		c := c
 
 		evKey, evVal, evCount = "", "", 0
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
@@ -424,10 +449,11 @@ func TestCache_DeleteWithEvent(t *testing.T) {
 			}
 			// fill cache
 			for i := 0; i < 1000; i++ {
+				i := i
 				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 					return sizedString(fmt.Sprintf("result-%d", i)), nil
 				})
-				require.Nil(t, err)
+				require.NoError(t, err)
 			}
 			assert.Equal(t, 1000, c.Stat().Keys)
 			assert.Equal(t, int64(9890), c.Stat().Size)
@@ -442,15 +468,19 @@ func TestCache_DeleteWithEvent(t *testing.T) {
 }
 
 func TestCache_Stats(t *testing.T) {
-	caches := cachesTestList(t)
+	caches, teardown := cachesTestList(t)
+	defer teardown()
+
 	for _, c := range caches {
+		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			// fill cache
 			for i := 0; i < 100; i++ {
+				i := i
 				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 					return sizedString(fmt.Sprintf("result-%d", i)), nil
 				})
-				require.Nil(t, err)
+				require.NoError(t, err)
 			}
 			stats := c.Stat()
 			switch c.(type) {
@@ -485,7 +515,7 @@ func TestCache_Stats(t *testing.T) {
 			_, err = c.Get("key-9999", func() (Value, error) {
 				return nil, errors.New("err")
 			})
-			require.NotNil(t, err)
+			require.Error(t, err)
 			switch c.(type) {
 			case *RedisCache:
 				assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 0, Errors: 1}, c.Stat())
@@ -493,7 +523,6 @@ func TestCache_Stats(t *testing.T) {
 				assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 893, Errors: 1}, c.Stat())
 			}
 		})
-
 	}
 }
 
@@ -525,7 +554,6 @@ func ExampleLoadingCache_Get() {
 }
 
 func ExampleLoadingCache_Delete() {
-
 	// make expirable cache (30m TTL) with up to 10 keys. Set callback on eviction event
 	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30), OnEvicted(func(key string, value Value) {
 		fmt.Println("key " + key + " evicted")
@@ -533,6 +561,7 @@ func ExampleLoadingCache_Delete() {
 	if err != nil {
 		panic("can' make cache")
 	}
+	defer c.Close()
 
 	// try to get from cache and because mykey is not in will put it
 	_, _ = c.Get("mykey", func() (Value, error) {
@@ -555,7 +584,7 @@ type countedCache interface {
 	counts
 }
 
-func cachesTestList(t *testing.T, opts ...Option) []countedCache {
+func cachesTestList(t *testing.T, opts ...Option) ([]countedCache, func()) {
 	var caches []countedCache
 	ec, err := NewExpirableCache(opts...)
 	require.NoError(t, err, "can't make exp cache")
@@ -571,7 +600,10 @@ func cachesTestList(t *testing.T, opts ...Option) []countedCache {
 	require.NoError(t, err, "can't make redis cache")
 	caches = append(caches, rc)
 
-	return caches
+	return caches, func() {
+		_ = client.Close()
+		server.Close()
+	}
 }
 
 type sizedString string

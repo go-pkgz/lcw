@@ -228,7 +228,6 @@ func ExampleScache() {
 		}
 		w.WriteHeader(404)
 	}))
-	defer ts.Close()
 
 	// load page function
 	loadURL := func(url string) ([]byte, error) {
@@ -286,6 +285,9 @@ func ExampleScache() {
 	// get cache stats
 	stats := cache.Stat()
 	fmt.Printf("%+v\n", stats)
+
+	// close test HTTP server after all log.Fatalf are passed
+	ts.Close()
 
 	// Output:
 	// <html><body>test response</body></html>

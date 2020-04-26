@@ -31,7 +31,7 @@ func TestLruCache_MaxKeys(t *testing.T) {
 		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
 	}
 
-	keys := lc.Keys()[:]
+	keys := lc.Keys()
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
@@ -93,7 +93,6 @@ func ExampleLruCache() {
 		}
 		w.WriteHeader(404)
 	}))
-	defer ts.Close()
 
 	// load page function
 	loadURL := func(url string) (string, error) {
@@ -112,7 +111,7 @@ func ExampleLruCache() {
 	// fixed size LRU cache, 100 items, up to 10k in total size
 	cache, err := NewLruCache(MaxKeys(100), MaxCacheSize(10*1024))
 	if err != nil {
-		log.Fatalf("can't make lru cache, %v", err)
+		log.Printf("can't make lru cache, %v", err)
 	}
 
 	// url not in cache, load data
@@ -146,6 +145,9 @@ func ExampleLruCache() {
 	// get cache stats
 	stats := cache.Stat()
 	fmt.Printf("%+v\n", stats)
+
+	// close test HTTP server after all log.Fatalf are passed
+	ts.Close()
 
 	// Output:
 	// <html><body>test response</body></html>

@@ -43,6 +43,7 @@ linters:
     - stylecheck
     - gochecknoinits
     - scopelint
+    - gocritic
     - nakedret
     - gosimple
     - prealloc

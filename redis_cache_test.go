@@ -3,7 +3,6 @@ package lcw
 import (
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"sync/atomic"
 	"testing"
@@ -34,9 +33,7 @@ func TestExpirableRedisCache(t *testing.T) {
 		Addr: server.Addr()})
 	defer client.Close()
 	rc, err := NewRedisCache(client, MaxKeys(5), TTL(time.Second*6))
-	if err != nil {
-		log.Fatalf("can't make redis cache, %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 	require.NoError(t, err)
 	for i := 0; i < 5; i++ {
@@ -51,7 +48,7 @@ func TestExpirableRedisCache(t *testing.T) {
 	assert.Equal(t, 5, rc.Stat().Keys)
 	assert.Equal(t, int64(5), rc.Stat().Misses)
 
-	keys := rc.Keys()[:]
+	keys := rc.Keys()
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
@@ -79,9 +76,7 @@ func TestRedisCache(t *testing.T) {
 		Addr: server.Addr()})
 	defer client.Close()
 	rc, err := NewRedisCache(client, MaxKeys(5), MaxValSize(10), MaxKeySize(10))
-	if err != nil {
-		log.Fatalf("can't make redis cache, %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 	// put 5 keys to cache
 	for i := 0; i < 5; i++ {
@@ -143,9 +138,7 @@ func TestRedisCacheErrors(t *testing.T) {
 		Addr: server.Addr()})
 	defer client.Close()
 	rc, err := NewRedisCache(client)
-	if err != nil {
-		log.Fatalf("can't make redis cache, %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	res, err := rc.Get("error-key-Z", func() (Value, error) {

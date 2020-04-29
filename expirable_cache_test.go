@@ -37,6 +37,7 @@ func TestExpirableCache(t *testing.T) {
 	assert.Equal(t, 5, lc.Stat().Keys)
 	assert.Equal(t, int64(6), lc.Stat().Misses)
 
+	// TODO keys are not evicted on expire in ristretto, should we expect number of keys to decrease?
 	time.Sleep(55 * time.Millisecond)
 	assert.Equal(t, 4, lc.Stat().Keys)
 
@@ -61,6 +62,9 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("result-%d", i), res.(string))
 		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
 	}
+
+	// Get without small sleep would return uncached result
+	time.Sleep(time.Millisecond * 10)
 
 	// check if really cached
 	res, err := lc.Get("key-3", func() (Value, error) {

@@ -1,10 +1,11 @@
 package lcw
 
 import (
+	"strconv"
 	"sync/atomic"
 	"time"
 
-	"github.com/patrickmn/go-cache"
+	"github.com/dgraph-io/ristretto"
 	"github.com/pkg/errors"
 )
 
@@ -13,7 +14,8 @@ type ExpirableCache struct {
 	options
 	CacheStat
 	currentSize int64
-	backend     *cache.Cache
+	keysStorage map[string]struct{}
+	backend     *ristretto.Cache
 }
 
 // NewExpirableCache makes expirable LoadingCache implementation, 1000 max keys by default and 5s TTL
@@ -24,6 +26,7 @@ func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
 			maxValueSize: 0,
 			ttl:          5 * time.Minute,
 		},
+		keysStorage: map[string]struct{}{},
 	}
 
 	for _, opt := range opts {
@@ -32,18 +35,28 @@ func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
 		}
 	}
 
-	res.backend = cache.New(res.ttl, res.ttl/2)
-
-	// OnEvicted called automatically for expired and manually deleted
-	res.backend.OnEvicted(func(key string, value interface{}) {
+	// TODO how to delete key from res.keysStorage here?
+	onEvict := func(key, _ uint64, value interface{}, _ int64) {
 		if res.onEvicted != nil {
-			res.onEvicted(key, value)
+			res.onEvicted(strconv.FormatUint(key, 10), value)
 		}
 		if s, ok := value.(Sizer); ok {
 			size := s.Size()
 			atomic.AddInt64(&res.currentSize, -1*int64(size))
 		}
+	}
+
+	cache, err := ristretto.NewCache(&ristretto.Config{
+		NumCounters: int64(res.options.maxKeys * 10), // number of keys to track frequency of (10x max keys).
+		MaxCost:     int64(res.options.maxKeys),      // maximum cost of cache (equal to amount of keys).
+		BufferItems: 64,                              // number of keys per Get buffer.
+		OnEvict:     onEvict,                         // OnEvict called automatically for expired and manually deleted
+		Metrics:     true,
 	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to set cache option")
+	}
+	res.backend = cache
 
 	return &res, nil
 }
@@ -61,25 +74,20 @@ func (c *ExpirableCache) Get(key string, fn func() (Value, error)) (data Value, 
 	}
 	atomic.AddInt64(&c.Misses, 1)
 
-	if c.allowed(key, data) {
-		if s, ok := data.(Sizer); ok {
-			if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize)+int64(s.Size()) >= c.maxCacheSize {
-				c.backend.DeleteExpired()
-				return data, nil
-			}
-			atomic.AddInt64(&c.currentSize, int64(s.Size()))
-		}
-		c.backend.Set(key, data, c.ttl)
+	if s, ok := data.(Sizer); ok {
+		atomic.AddInt64(&c.currentSize, int64(s.Size()))
 	}
+	c.backend.SetWithTTL(key, data, 1, c.ttl)
+	c.keysStorage[key] = struct{}{}
 
 	return data, nil
 }
 
 // Invalidate removes keys with passed predicate fn, i.e. fn(key) should be true to get evicted
 func (c *ExpirableCache) Invalidate(fn func(key string) bool) {
-	for key := range c.backend.Items() { // Keys() returns copy of cache's key, safe to remove directly
+	for key := range c.keysStorage {
 		if fn(key) {
-			c.backend.Delete(key)
+			c.backend.Del(key)
 		}
 	}
 }
@@ -91,20 +99,19 @@ func (c *ExpirableCache) Peek(key string) (Value, bool) {
 
 // Purge clears the cache completely.
 func (c *ExpirableCache) Purge() {
-	c.backend.Flush()
+	c.backend.Clear()
 	atomic.StoreInt64(&c.currentSize, 0)
 }
 
 // Delete cache item by key
 func (c *ExpirableCache) Delete(key string) {
-	c.backend.Delete(key)
+	c.backend.Del(key)
 }
 
 // Keys returns cache keys
 func (c *ExpirableCache) Keys() (res []string) {
-	items := c.backend.Items()
-	res = make([]string, 0, len(items))
-	for key := range items {
+	res = make([]string, 0, len(c.keysStorage))
+	for key := range c.keysStorage {
 		res = append(res, key)
 	}
 	return res
@@ -131,20 +138,5 @@ func (c *ExpirableCache) size() int64 {
 }
 
 func (c *ExpirableCache) keys() int {
-	return c.backend.ItemCount()
-}
-
-func (c *ExpirableCache) allowed(key string, data Value) bool {
-	if c.backend.ItemCount() >= c.maxKeys {
-		return false
-	}
-	if c.maxKeySize > 0 && len(key) > c.maxKeySize {
-		return false
-	}
-	if s, ok := data.(Sizer); ok {
-		if c.maxValueSize > 0 && s.Size() >= c.maxValueSize {
-			return false
-		}
-	}
-	return true
+	return int(c.backend.Metrics.KeysAdded() - c.backend.Metrics.KeysEvicted())
 }

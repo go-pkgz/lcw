@@ -37,7 +37,7 @@ func TestExpirableCache(t *testing.T) {
 	assert.Equal(t, 5, lc.Stat().Keys)
 	assert.Equal(t, int64(6), lc.Stat().Misses)
 
-	time.Sleep(55 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	assert.Equal(t, 4, lc.Stat().Keys)
 
 	time.Sleep(210 * time.Millisecond)

@@ -4,7 +4,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/patrickmn/go-cache"
+	"github.com/bluele/gcache"
 	"github.com/pkg/errors"
 )
 
@@ -13,7 +13,7 @@ type ExpirableCache struct {
 	options
 	CacheStat
 	currentSize int64
-	backend     *cache.Cache
+	backend     gcache.Cache
 }
 
 // NewExpirableCache makes expirable LoadingCache implementation, 1000 max keys by default and 5s TTL
@@ -32,25 +32,26 @@ func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
 		}
 	}
 
-	res.backend = cache.New(res.ttl, res.ttl/2)
+	c := gcache.New(res.maxKeys).LRU().EvictedFunc(
+		// EvictedFunc called automatically for expired and manually deleted
+		func(key, value interface{}) {
+			if res.onEvicted != nil {
+				res.onEvicted(key.(string), value)
+			}
+			if s, ok := value.(Sizer); ok {
+				size := s.Size()
+				atomic.AddInt64(&res.currentSize, -1*int64(size))
+			}
+		}).Build()
 
-	// OnEvicted called automatically for expired and manually deleted
-	res.backend.OnEvicted(func(key string, value interface{}) {
-		if res.onEvicted != nil {
-			res.onEvicted(key, value)
-		}
-		if s, ok := value.(Sizer); ok {
-			size := s.Size()
-			atomic.AddInt64(&res.currentSize, -1*int64(size))
-		}
-	})
+	res.backend = c
 
 	return &res, nil
 }
 
 // Get gets value by key or load with fn if not found in cache
 func (c *ExpirableCache) Get(key string, fn func() (Value, error)) (data Value, err error) {
-	if v, ok := c.backend.Get(key); ok {
+	if v, e := c.backend.Get(key); e == nil {
 		atomic.AddInt64(&c.Hits, 1)
 		return v, nil
 	}
@@ -64,48 +65,51 @@ func (c *ExpirableCache) Get(key string, fn func() (Value, error)) (data Value, 
 	if c.allowed(key, data) {
 		if s, ok := data.(Sizer); ok {
 			if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize)+int64(s.Size()) >= c.maxCacheSize {
-				c.backend.DeleteExpired()
 				return data, nil
 			}
 			atomic.AddInt64(&c.currentSize, int64(s.Size()))
 		}
-		c.backend.Set(key, data, c.ttl)
+		err = c.backend.SetWithExpire(key, data, c.ttl)
 	}
 
-	return data, nil
+	return data, err
 }
 
 // Invalidate removes keys with passed predicate fn, i.e. fn(key) should be true to get evicted
 func (c *ExpirableCache) Invalidate(fn func(key string) bool) {
-	for key := range c.backend.Items() { // Keys() returns copy of cache's key, safe to remove directly
-		if fn(key) {
-			c.backend.Delete(key)
+	for _, key := range c.backend.Keys(true) { // Keys() returns copy of cache's key, safe to remove directly
+		if fn(key.(string)) {
+			c.backend.Remove(key)
 		}
 	}
 }
 
 // Peek returns the key value (or undefined if not found) without updating the "recently used"-ness of the key.
 func (c *ExpirableCache) Peek(key string) (Value, bool) {
-	return c.backend.Get(key)
+	v, err := c.backend.Get(key)
+	if err != nil {
+		return nil, false
+	}
+	return v, true
 }
 
 // Purge clears the cache completely.
 func (c *ExpirableCache) Purge() {
-	c.backend.Flush()
+	c.backend.Purge()
 	atomic.StoreInt64(&c.currentSize, 0)
 }
 
 // Delete cache item by key
 func (c *ExpirableCache) Delete(key string) {
-	c.backend.Delete(key)
+	c.backend.Remove(key)
 }
 
 // Keys returns cache keys
 func (c *ExpirableCache) Keys() (res []string) {
-	items := c.backend.Items()
+	items := c.backend.Keys(true)
 	res = make([]string, 0, len(items))
-	for key := range items {
-		res = append(res, key)
+	for _, key := range items {
+		res = append(res, key.(string))
 	}
 	return res
 }
@@ -131,11 +135,11 @@ func (c *ExpirableCache) size() int64 {
 }
 
 func (c *ExpirableCache) keys() int {
-	return c.backend.ItemCount()
+	return len(c.backend.Keys(true))
 }
 
 func (c *ExpirableCache) allowed(key string, data Value) bool {
-	if c.backend.ItemCount() >= c.maxKeys {
+	if len(c.backend.Keys(true)) >= c.maxKeys {
 		return false
 	}
 	if c.maxKeySize > 0 && len(key) > c.maxKeySize {

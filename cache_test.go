@@ -532,6 +532,7 @@ func ExampleLoadingCache_Get() {
 	if err != nil {
 		panic("can' make cache")
 	}
+	defer c.Close()
 
 	// try to get from cache and because mykey is not in will put it
 	_, _ = c.Get("mykey", func() (Value, error) {
@@ -602,6 +603,9 @@ func cachesTestList(t *testing.T, opts ...Option) (c []countedCache, teardown fu
 
 	return caches, func() {
 		_ = client.Close()
+		_ = ec.Close()
+		_ = lc.Close()
+		_ = rc.Close()
 		server.Close()
 	}
 }

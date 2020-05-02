@@ -43,6 +43,8 @@ func TestExpirableCache(t *testing.T) {
 	time.Sleep(210 * time.Millisecond)
 	assert.Equal(t, 0, lc.keys())
 	assert.Equal(t, []string{}, lc.Keys())
+
+	assert.NoError(t, lc.Close())
 }
 
 func TestExpirableCache_MaxKeys(t *testing.T) {
@@ -90,6 +92,8 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "result-Zzzz", res.(string), "got non-cached value")
 	assert.Equal(t, 5, lc.keys())
+
+	assert.NoError(t, lc.Close())
 }
 
 func TestExpirableCache_BadOptions(t *testing.T) {

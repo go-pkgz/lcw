@@ -234,7 +234,7 @@ func (c *LoadingCache) purge(maxKeys int64) {
 
 	// size eviction
 	size := int64(len(c.data))
-	if maxKeys == allKeys { // evict everything in case maxKeys == -1
+	if maxKeys == allKeys { // evict everything
 		maxKeys = 0
 	}
 	if len(kts) > 0 {

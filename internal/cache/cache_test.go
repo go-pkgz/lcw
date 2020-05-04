@@ -31,7 +31,6 @@ func TestLoadingCacheNoPurge(t *testing.T) {
 func TestLoadingCacheWithPurge(t *testing.T) {
 	var evicted []string
 	lc, err := NewLoadingCache(
-		LRU(),
 		PurgeEvery(time.Millisecond*100),
 		TTL(150*time.Millisecond),
 		OnEvicted(func(key string, value interface{}) { evicted = append(evicted, key, value.(string)) }),
@@ -72,7 +71,7 @@ func TestLoadingCacheWithPurge(t *testing.T) {
 }
 
 func TestLoadingCacheWithPurgeEnforcedBySize(t *testing.T) {
-	lc, err := NewLoadingCache(MaxKeys(10))
+	lc, err := NewLoadingCache(MaxKeys(10), TTL(time.Hour))
 	assert.NoError(t, err)
 	defer lc.Close()
 
@@ -86,45 +85,6 @@ func TestLoadingCacheWithPurgeEnforcedBySize(t *testing.T) {
 	}
 
 	assert.Equal(t, 10, lc.ItemCount())
-}
-
-func TestLoadingCacheWithPurgeMax(t *testing.T) {
-	lc, err := NewLoadingCache(PurgeEvery(time.Millisecond*50), MaxKeys(2))
-	assert.NoError(t, err)
-	defer lc.Close()
-
-	lc.Set("key1", "val1")
-	lc.Set("key2", "val2")
-	lc.Set("key3", "val3")
-	assert.Equal(t, 3, lc.ItemCount())
-
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, 2, lc.ItemCount())
-
-	_, found := lc.Get("key1")
-	assert.False(t, found, "key1 should be deleted")
-}
-
-func TestLoadingCacheWithPurgeMaxLru(t *testing.T) {
-	lc, err := NewLoadingCache(PurgeEvery(time.Millisecond*50), MaxKeys(2), LRU())
-	assert.NoError(t, err)
-	defer lc.Close()
-
-	lc.Set("key1", "val1")
-	lc.Set("key2", "val2")
-	lc.Set("key3", "val3")
-	assert.Equal(t, 3, lc.ItemCount())
-
-	// read key1 again, changes LRU
-	v, ok := lc.Get("key1")
-	assert.Equal(t, "val1", v)
-	assert.True(t, ok)
-
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, 2, lc.ItemCount())
-
-	_, found := lc.Get("key2")
-	assert.False(t, found, "key2 should be deleted")
 }
 
 func TestLoadingCacheConcurrency(t *testing.T) {
@@ -207,4 +167,28 @@ func TestLoadingExpired(t *testing.T) {
 	v, ok = lc.Get("key1")
 	assert.Empty(t, v)
 	assert.False(t, ok)
+}
+
+func TestLoadingCacheRemoveOldest(t *testing.T) {
+	lc, err := NewLoadingCache(LRU(), MaxKeys(2))
+	assert.NoError(t, err)
+
+	lc.Set("key1", "val1")
+	assert.Equal(t, 1, lc.ItemCount())
+
+	v, ok := lc.Get("key1")
+	assert.True(t, ok)
+	assert.Equal(t, "val1", v)
+
+	assert.Equal(t, []string{"key1"}, lc.Keys())
+	assert.Equal(t, 1, lc.ItemCount())
+
+	lc.Set("key2", "val2")
+	assert.Equal(t, []string{"key1", "key2"}, lc.Keys())
+	assert.Equal(t, 2, lc.ItemCount())
+
+	lc.RemoveOldest()
+
+	assert.Equal(t, []string{"key2"}, lc.Keys())
+	assert.Equal(t, 1, lc.ItemCount())
 }

@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"sort"
 	"sync/atomic"
 	"testing"
 
@@ -32,7 +31,6 @@ func TestLruCache_MaxKeys(t *testing.T) {
 	}
 
 	keys := lc.Keys()
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
 	// check if really cached

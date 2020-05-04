@@ -3,15 +3,16 @@ package lcw
 import (
 	"sync/atomic"
 
-	lru "github.com/hashicorp/golang-lru"
 	"github.com/pkg/errors"
+
+	"github.com/go-pkgz/lcw/internal/cache"
 )
 
-// LruCache wraps lru.LruCache with loading cache Get and size limits
+// LruCache wraps LoadingCache with loading cache Get and size limits
 type LruCache struct {
 	options
 	CacheStat
-	backend     *lru.Cache
+	backend     *cache.LoadingCache
 	currentSize int64
 }
 
@@ -29,21 +30,23 @@ func NewLruCache(opts ...Option) (*LruCache, error) {
 		}
 	}
 
-	onEvicted := func(key interface{}, value interface{}) {
-		if res.onEvicted != nil {
-			res.onEvicted(key.(string), value)
-		}
-		if s, ok := value.(Sizer); ok {
-			size := s.Size()
-			atomic.AddInt64(&res.currentSize, -1*int64(size))
-		}
+	backend, err := cache.NewLoadingCache(
+		cache.LRU(),
+		cache.MaxKeys(res.maxKeys),
+		cache.OnEvicted(func(key string, value interface{}) {
+			if res.onEvicted != nil {
+				res.onEvicted(key, value)
+			}
+			if s, ok := value.(Sizer); ok {
+				size := s.Size()
+				atomic.AddInt64(&res.currentSize, -1*int64(size))
+			}
+		}),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating backend")
 	}
-
-	var err error
-	// OnEvicted called automatically for expired and manually deleted
-	if res.backend, err = lru.NewWithEvict(res.maxKeys, onEvicted); err != nil {
-		return nil, errors.Wrap(err, "failed to make lru cache backend")
-	}
+	res.backend = backend
 
 	return &res, nil
 }
@@ -63,7 +66,7 @@ func (c *LruCache) Get(key string, fn func() (Value, error)) (data Value, err er
 	atomic.AddInt64(&c.Misses, 1)
 
 	if c.allowed(key, data) {
-		c.backend.Add(key, data)
+		c.backend.Set(key, data)
 
 		if s, ok := data.(Sizer); ok {
 			atomic.AddInt64(&c.currentSize, int64(s.Size()))
@@ -90,26 +93,17 @@ func (c *LruCache) Purge() {
 
 // Invalidate removes keys with passed predicate fn, i.e. fn(key) should be true to get evicted
 func (c *LruCache) Invalidate(fn func(key string) bool) {
-	for _, k := range c.backend.Keys() { // Keys() returns copy of cache's key, safe to remove directly
-		if key, ok := k.(string); ok && fn(key) {
-			c.backend.Remove(key)
-		}
-	}
+	c.backend.InvalidateFn(fn)
 }
 
 // Delete cache item by key
 func (c *LruCache) Delete(key string) {
-	c.backend.Remove(key)
+	c.backend.Invalidate(key)
 }
 
 // Keys returns cache keys
 func (c *LruCache) Keys() (res []string) {
-	keys := c.backend.Keys()
-	res = make([]string, 0, len(keys))
-	for _, key := range keys {
-		res = append(res, key.(string))
-	}
-	return res
+	return c.backend.Keys()
 }
 
 // Stat returns cache statistics
@@ -123,8 +117,9 @@ func (c *LruCache) Stat() CacheStat {
 	}
 }
 
-// Close does nothing for this type of cache
+// Close kills cleanup goroutine
 func (c *LruCache) Close() error {
+	c.backend.Close()
 	return nil
 }
 
@@ -133,7 +128,7 @@ func (c *LruCache) size() int64 {
 }
 
 func (c *LruCache) keys() int {
-	return c.backend.Len()
+	return c.backend.ItemCount()
 }
 
 func (c *LruCache) allowed(key string, data Value) bool {

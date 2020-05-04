@@ -48,7 +48,7 @@ func TestLruCache_MaxKeys(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-X", res.(string))
-	assert.Equal(t, 5, lc.backend.Len())
+	assert.Equal(t, 5, lc.backend.ItemCount())
 
 	// put to cache and make sure it cached
 	res, err = lc.Get("key-Z", func() (Value, error) {
@@ -62,7 +62,14 @@ func TestLruCache_MaxKeys(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-Z", res.(string), "got cached value")
-	assert.Equal(t, 5, lc.backend.Len())
+	assert.Equal(t, 5, lc.backend.ItemCount())
+
+	// first inserted item should be evicted by now
+	res, err = lc.Get("key-1", func() (Value, error) {
+		return "result-blah", nil
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "result-blah", res.(string), "should not be cached")
 }
 
 func TestLruCache_BadOptions(t *testing.T) {

@@ -31,7 +31,6 @@ func TestLoadingCacheNoPurge(t *testing.T) {
 func TestLoadingCacheWithPurge(t *testing.T) {
 	var evicted []string
 	lc, err := NewLoadingCache(
-		LRU(),
 		PurgeEvery(time.Millisecond*100),
 		TTL(150*time.Millisecond),
 		OnEvicted(func(key string, value interface{}) { evicted = append(evicted, key, value.(string)) }),
@@ -60,15 +59,21 @@ func TestLoadingCacheWithPurge(t *testing.T) {
 	lc.Set("key2", "val2")
 	assert.Equal(t, 1, lc.ItemCount())
 
-	// DeleteExpired, nothing deleted
+	time.Sleep(200 * time.Millisecond) // expire key2
+
+	// DeleteExpired, key2 deleted
 	lc.DeleteExpired()
+	assert.Equal(t, 0, lc.ItemCount())
+	assert.Equal(t, []string{"key1", "val1", "key2", "val2"}, evicted)
+
+	// add third entry
+	lc.Set("key3", "val3")
 	assert.Equal(t, 1, lc.ItemCount())
-	assert.Equal(t, []string{"key1", "val1"}, evicted)
 
 	// Purge, cache should be clean
 	lc.Purge()
 	assert.Equal(t, 0, lc.ItemCount())
-	assert.Equal(t, []string{"key1", "val1", "key2", "val2"}, evicted)
+	assert.Equal(t, []string{"key1", "val1", "key2", "val2", "key3", "val3"}, evicted)
 }
 
 func TestLoadingCacheWithPurgeEnforcedBySize(t *testing.T) {
@@ -105,28 +110,6 @@ func TestLoadingCacheWithPurgeMax(t *testing.T) {
 	assert.False(t, found, "key1 should be deleted")
 }
 
-func TestLoadingCacheWithPurgeMaxLru(t *testing.T) {
-	lc, err := NewLoadingCache(PurgeEvery(time.Millisecond*50), MaxKeys(2), LRU())
-	assert.NoError(t, err)
-	defer lc.Close()
-
-	lc.Set("key1", "val1")
-	lc.Set("key2", "val2")
-	lc.Set("key3", "val3")
-	assert.Equal(t, 3, lc.ItemCount())
-
-	// read key1 again, changes LRU
-	v, ok := lc.Get("key1")
-	assert.Equal(t, "val1", v)
-	assert.True(t, ok)
-
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, 2, lc.ItemCount())
-
-	_, found := lc.Get("key2")
-	assert.False(t, found, "key2 should be deleted")
-}
-
 func TestLoadingCacheConcurrency(t *testing.T) {
 	lc, err := NewLoadingCache()
 	assert.NoError(t, err)
@@ -144,7 +127,7 @@ func TestLoadingCacheConcurrency(t *testing.T) {
 
 func TestLoadingCacheInvalidateAndEvict(t *testing.T) {
 	var evicted int
-	lc, err := NewLoadingCache(LRU(), OnEvicted(func(_ string, _ interface{}) { evicted++ }))
+	lc, err := NewLoadingCache(OnEvicted(func(_ string, _ interface{}) { evicted++ }))
 	assert.NoError(t, err)
 
 	lc.Set("key1", "val1")

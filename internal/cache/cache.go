@@ -4,7 +4,6 @@
 package cache
 
 import (
-	"container/list"
 	"sync"
 	"time"
 
@@ -24,8 +23,8 @@ type LoadingCache struct {
 	onEvicted  func(key string, value interface{})
 
 	sync.Mutex
-	data      map[string]*list.Element
-	evictList *list.List
+	data      map[string]*cacheItem
+	evictList *list
 }
 
 // noEvictionTTL - very long ttl to prevent eviction
@@ -36,8 +35,8 @@ const noEvictionTTL = time.Hour * 24 * 365 * 10
 // If MaxKeys and TTL are defined and PurgeEvery is zero, PurgeEvery will be set to 5 minutes.
 func NewLoadingCache(options ...Option) (*LoadingCache, error) {
 	res := LoadingCache{
-		data:       map[string]*list.Element{},
-		evictList:  list.New(),
+		data:       map[string]*cacheItem{},
+		evictList:  newList(),
 		ttl:        noEvictionTTL,
 		purgeEvery: 0,
 		maxKeys:    0,
@@ -82,15 +81,15 @@ func (c *LoadingCache) Set(key string, value interface{}) {
 	// Check for existing item
 	if ent, ok := c.data[key]; ok {
 		c.evictList.MoveToFront(ent)
-		ent.Value.(*cacheItem).value = value
-		ent.Value.(*cacheItem).expiresAt = now.Add(c.ttl)
+		ent.value = value
+		ent.expiresAt = now.Add(c.ttl)
 		return
 	}
 
 	// Add new item
 	ent := &cacheItem{key: key, value: value, expiresAt: now.Add(c.ttl)}
-	entry := c.evictList.PushFront(ent)
-	c.data[key] = entry
+	c.evictList.PushFront(ent)
+	c.data[key] = ent
 
 	// Verify size not exceeded
 	if c.maxKeys > 0 && int64(len(c.data)) > c.maxKeys {
@@ -104,13 +103,13 @@ func (c *LoadingCache) Get(key string) (interface{}, bool) {
 	defer c.Unlock()
 	if ent, ok := c.data[key]; ok {
 		// Expired item check
-		if time.Now().After(ent.Value.(*cacheItem).expiresAt) {
+		if time.Now().After(ent.expiresAt) {
 			return nil, false
 		}
 		if c.isLRU {
 			c.evictList.MoveToFront(ent)
 		}
-		return ent.Value.(*cacheItem).value, true
+		return ent.value, true
 	}
 	return nil, false
 }
@@ -121,10 +120,10 @@ func (c *LoadingCache) Peek(key string) (interface{}, bool) {
 	defer c.Unlock()
 	if ent, ok := c.data[key]; ok {
 		// Expired item check
-		if time.Now().After(ent.Value.(*cacheItem).expiresAt) {
+		if time.Now().After(ent.expiresAt) {
 			return nil, false
 		}
-		return ent.Value.(*cacheItem).value, true
+		return ent.value, true
 	}
 	return nil, false
 }
@@ -169,7 +168,7 @@ func (c *LoadingCache) Purge() {
 	defer c.Unlock()
 	for k, v := range c.data {
 		if c.onEvicted != nil {
-			c.onEvicted(k, v.Value.(*cacheItem).value)
+			c.onEvicted(k, v.value)
 		}
 		delete(c.data, k)
 	}
@@ -209,25 +208,24 @@ func (c *LoadingCache) removeOldest() {
 func (c *LoadingCache) keys() []string {
 	keys := make([]string, 0, len(c.data))
 	for ent := c.evictList.Back(); ent != nil; ent = ent.Prev() {
-		keys = append(keys, ent.Value.(*cacheItem).key)
+		keys = append(keys, ent.key)
 	}
 	return keys
 }
 
 // removeElement is used to remove a given list element from the cache. Has to be called with lock!
-func (c *LoadingCache) removeElement(e *list.Element) {
+func (c *LoadingCache) removeElement(e *cacheItem) {
 	c.evictList.Remove(e)
-	kv := e.Value.(*cacheItem)
-	delete(c.data, kv.key)
+	delete(c.data, e.key)
 	if c.onEvicted != nil {
-		c.onEvicted(kv.key, kv.value)
+		c.onEvicted(e.key, e.value)
 	}
 }
 
 // deleteExpired deletes expired records. Has to be called with lock!
 func (c *LoadingCache) deleteExpired() {
 	for _, key := range c.keys() {
-		if time.Now().After(c.data[key].Value.(*cacheItem).expiresAt) {
+		if time.Now().After(c.data[key].expiresAt) {
 			c.removeElement(c.data[key])
 			continue
 		}
@@ -244,4 +242,14 @@ type cacheItem struct {
 	expiresAt time.Time
 	key       string
 	value     interface{}
+
+	// Next and previous pointers in the doubly-linked list of elements.
+	// To simplify the implementation, internally a list l is implemented
+	// as a ring, such that &l.root is both the next element of the last
+	// list element (l.Back()) and the previous element of the first list
+	// element (l.Front()).
+	next, prev *cacheItem
+
+	// The list to which this element belongs.
+	list *list
 }

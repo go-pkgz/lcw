@@ -1,4 +1,4 @@
-// Package lcw adds a thin layer on top of lru cache and go-cache providing more limits and common interface.
+// Package lcw adds a thin layer on top of lru and expirable cache providing more limits and common interface.
 // The primary method to get (and set) data to/from the cache is LoadingCache.Get returning stored data for a given key or
 // call provided func to retrieve and store, similar to Guava loading cache.
 // Limits allow max values for key size, number of keys, value size and total size of values in the cache.

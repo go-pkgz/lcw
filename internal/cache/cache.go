@@ -172,7 +172,12 @@ func (c *LoadingCache) getValue(key string) (interface{}, bool) {
 func (c *LoadingCache) Purge() {
 	c.Lock()
 	defer c.Unlock()
-	c.purge(allKeys)
+	for k, v := range c.data {
+		delete(c.data, k)
+		if c.onEvicted != nil {
+			c.onEvicted(k, v.data)
+		}
+	}
 }
 
 // DeleteExpired clears cache of expired items

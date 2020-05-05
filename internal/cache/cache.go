@@ -1,6 +1,6 @@
 // Package cache implements LoadingCache.
 //
-// Support size-based eviction with LRC and LRU, and TTL based eviction.
+// Support LRC TTL-based eviction.
 package cache
 
 import (
@@ -11,15 +11,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-// LoadingCache provides loading cache with on-demand loading, similar to Guava LoadingCache.
-// Implements cache.LoadingCache. Cache is consistent, i.e. read guaranteed to get latest write,
-// and no stale writes in any place. In order to provide such
-// consistency LoadingCache locking on particular key, but no locks across multiple keys.
+// LoadingCache provides expirable loading cache with LRC eviction.
 type LoadingCache struct {
 	purgeEvery time.Duration
 	ttl        time.Duration
 	maxKeys    int64
-	isLRU      bool
 	done       chan struct{}
 	onEvicted  func(key string, value interface{})
 
@@ -30,10 +26,7 @@ type LoadingCache struct {
 // noEvictionTTL - very long ttl to prevent eviction
 const noEvictionTTL = time.Hour * 24 * 365 * 10
 
-// allKeys - LoadingCache.purge() maxKeys value for clearing the storage
-const allKeys = -1
-
-// NewLoadingCache returns a new cache, activates purge with purgeEvery (0 to never purge).
+// NewLoadingCache returns a new expirable LRC cache, activates purge with purgeEvery (0 to never purge).
 // Default MaxKeys is unlimited (0).
 func NewLoadingCache(options ...Option) (*LoadingCache, error) {
 	res := LoadingCache{
@@ -82,9 +75,6 @@ func (c *LoadingCache) Set(key string, value interface{}) {
 	}
 	c.data[key].data = value
 	c.data[key].expiresAt = now.Add(c.ttl)
-	if c.isLRU {
-		c.data[key].lastReadAt = now
-	}
 
 	// Enforced purge call in addition the one from the ticker
 	// to limit the worst-case scenario with a lot of sets in the
@@ -101,9 +91,6 @@ func (c *LoadingCache) Get(key string) (interface{}, bool) {
 	value, ok := c.getValue(key)
 	if !ok {
 		return nil, false
-	}
-	if c.isLRU {
-		c.data[key].lastReadAt = time.Now()
 	}
 	return value, ok
 }
@@ -210,7 +197,7 @@ type keysWithTs []struct {
 }
 
 // purge records > maxKeys. Has to be called with lock!
-// call with maxKeys 0 will only clear expired entries, with -1 will clear everything.
+// call with maxKeys 0 will only clear expired entries.
 func (c *LoadingCache) purge(maxKeys int64) {
 	kts := keysWithTs{}
 
@@ -224,11 +211,8 @@ func (c *LoadingCache) purge(maxKeys int64) {
 		}
 
 		// prepare list of keysWithTs for size eviction
-		if maxKeys == allKeys || (maxKeys > 0 && int64(len(c.data)) > maxKeys) {
-			ts := c.data[key].expiresAt // for no-LRU sort by expiration time
-			if c.isLRU {                // for LRU sort by read time
-				ts = c.data[key].lastReadAt
-			}
+		if maxKeys > 0 && int64(len(c.data)) > maxKeys {
+			ts := c.data[key].expiresAt
 
 			kts = append(kts, struct {
 				key string
@@ -239,9 +223,6 @@ func (c *LoadingCache) purge(maxKeys int64) {
 
 	// size eviction
 	size := int64(len(c.data))
-	if maxKeys == allKeys { // evict everything
-		maxKeys = 0
-	}
 	if len(kts) > 0 {
 		sort.Slice(kts, func(i int, j int) bool { return kts[i].ts.Before(kts[j].ts) })
 		for d := 0; int64(d) < size-maxKeys; d++ {
@@ -257,6 +238,5 @@ func (c *LoadingCache) purge(maxKeys int64) {
 
 type cacheItem struct {
 	expiresAt  time.Time
-	lastReadAt time.Time
 	data       interface{}
 }

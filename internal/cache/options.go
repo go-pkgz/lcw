@@ -40,11 +40,3 @@ func TTL(ttl time.Duration) Option {
 		return nil
 	}
 }
-
-// LRU sets cache to LRU (Least Recently Used) eviction mode. Affects size-based purge only.
-func LRU() Option {
-	return func(lc *LoadingCache) error {
-		lc.isLRU = true
-		return nil
-	}
-}

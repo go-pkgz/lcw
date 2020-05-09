@@ -526,7 +526,7 @@ func TestCache_Stats(t *testing.T) {
 	}
 }
 
-// LoadingCache illustrates creation of a cache and load
+// ExampleLoadingCache_Get illustrates creation of a cache and loading value from it
 func ExampleLoadingCache_Get() {
 	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30)) // make expirable cache (30m TTL) with up to 10 keys
 	if err != nil {
@@ -554,6 +554,7 @@ func ExampleLoadingCache_Get() {
 	// got myval-1 from cache, stats: {hits:1, misses:1, ratio:50.0%, keys:1, size:0, errors:0}
 }
 
+// ExampleLoadingCache_Delete illustrates cache value eviction and OnEvicted function usage.
 func ExampleLoadingCache_Delete() {
 	// make expirable cache (30m TTL) with up to 10 keys. Set callback on eviction event
 	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30), OnEvicted(func(key string, value Value) {
@@ -573,6 +574,44 @@ func ExampleLoadingCache_Delete() {
 	fmt.Println("stats: " + c.Stat().String())
 	// Output: key mykey evicted
 	// stats: {hits:0, misses:1, ratio:0.0%, keys:0, size:0, errors:0}
+}
+
+// nolint:govet //false positive due to example name
+// ExampleLoadingCacheMutability illustrates changing mutable stored item outside of cache, works only for non-Redis cache.
+func ExampleLoadingCacheMutability() {
+	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30)) // make expirable cache (30m TTL) with up to 10 keys
+	if err != nil {
+		panic("can' make cache")
+	}
+	defer c.Close()
+
+	mutableSlice := []string{"key1", "key2"}
+
+	// put mutableSlice in "mutableSlice" cache key
+	_, _ = c.Get("mutableSlice", func() (Value, error) {
+		return mutableSlice, nil
+	})
+
+	// get from cache, func won't run because mutableSlice is cached
+	// value is original now
+	v, _ := c.Get("mutableSlice", func() (Value, error) {
+		return nil, nil
+	})
+	fmt.Printf("got %v slice from cache\n", v)
+
+	mutableSlice[0] = "another_key_1"
+	mutableSlice[1] = "another_key_2"
+
+	// get from cache, func won't run because mutableSlice is cached
+	// value is changed inside the cache now because mutableSlice stored as-is, in mutable state
+	v, _ = c.Get("mutableSlice", func() (Value, error) {
+		return nil, nil
+	})
+	fmt.Printf("got %v slice from cache after it's change outside of cache\n", v)
+
+	// Output:
+	// got [key1 key2] slice from cache
+	// got [another_key_1 another_key_2] slice from cache after it's change outside of cache
 }
 
 type counts interface {

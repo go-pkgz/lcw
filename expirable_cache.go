@@ -138,6 +138,7 @@ func (c *ExpirableCache) Close() error {
 	return nil
 }
 
+// onBusEvent reacts on invalidation message triggered by event bus from another cache instance
 func (c *ExpirableCache) onBusEvent(id, key string) {
 	if id != c.id {
 		c.backend.Invalidate(key)

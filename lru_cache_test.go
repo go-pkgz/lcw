@@ -94,6 +94,7 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 
 	// put 5 keys to cache1
 	for i := 0; i < 5; i++ {
+		i := i
 		res, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 			atomic.AddInt32(&coldCalls, 1)
 			return fmt.Sprintf("result-%d", i), nil
@@ -131,6 +132,7 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 		return "result-X", nil
 	})
 	assert.Nil(t, err)
+	assert.Equal(t, "result-2", res.(string))
 	assert.Equal(t, 1, lc2.backend.Len(), "cache2 removed key-1")
 }
 

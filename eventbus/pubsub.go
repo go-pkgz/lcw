@@ -1,5 +1,10 @@
+// Package eventbus provides PubSub interface used for distributed cache invalidation,
+// as well as NopPubSub implementation.
 package eventbus
 
+// PubSub interface is used for distributed cache invalidation.
+// Publish is called on each entry invalidation,
+// Subscribe is used for subscription for these events.
 type PubSub interface {
 	Publish(fromID string, key string) error
 	Subscribe(fn func(fromID string, key string)) error
@@ -8,10 +13,12 @@ type PubSub interface {
 // NopPubSub implements default do-nothing pub-sub (event bus)
 type NopPubSub struct{}
 
+// Subscribe does nothing for NopPubSub
 func (n *NopPubSub) Subscribe(fn func(fromID string, key string)) error {
 	return nil
 }
 
-func (n *NopPubSub) Publish(fromID string, key string) error {
+// Publish does nothing for NopPubSub
+func (n *NopPubSub) Publish(fromID, key string) error {
 	return nil
 }

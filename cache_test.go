@@ -668,7 +668,7 @@ func (m *mockPubSub) Subscribe(fn func(fromID string, key string)) error {
 	return nil
 }
 
-func (m *mockPubSub) Publish(fromID string, key string) error {
+func (m *mockPubSub) Publish(fromID, key string) error {
 	m.calledKeys = append(m.calledKeys, key)
 	for _, fn := range m.fns {
 		fn(fromID, key)

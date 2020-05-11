@@ -123,6 +123,7 @@ func TestExpirableCacheWithBus(t *testing.T) {
 
 	// add 5 keys to the first node cache
 	for i := 0; i < 5; i++ {
+		i := i
 		_, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
 			return fmt.Sprintf("result-%d", i), nil
 		})

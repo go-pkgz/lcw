@@ -252,7 +252,6 @@ func ExampleScache() {
 	}
 
 	cache := NewScache(backend)
-	defer cache.Close()
 
 	// url not in cache, load data
 	url := ts.URL + "/post/42"
@@ -289,8 +288,12 @@ func ExampleScache() {
 	stats := cache.Stat()
 	fmt.Printf("%+v\n", stats)
 
-	// close test HTTP server after all log.Fatalf are passed
+	// close cache and test HTTP server after all log.Fatalf are passed
 	ts.Close()
+	err = cache.Close()
+	if err != nil {
+		log.Fatalf("can't close cache %v", err)
+	}
 
 	// Output:
 	// <html><body>test response</body></html>

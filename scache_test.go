@@ -20,6 +20,7 @@ func TestScache_Get(t *testing.T) {
 	lru, err := NewLruCache()
 	require.NoError(t, err)
 	lc := NewScache(lru)
+	defer lc.Close()
 
 	var coldCalls int32
 
@@ -52,6 +53,7 @@ func TestScache_Scopes(t *testing.T) {
 	lru, err := NewLruCache()
 	require.NoError(t, err)
 	lc := NewScache(lru)
+	defer lc.Close()
 
 	res, err := lc.Get(NewKey("site").ID("key").Scopes("s1", "s2"), func() ([]byte, error) {
 		return []byte("value"), nil
@@ -250,6 +252,7 @@ func ExampleScache() {
 	}
 
 	cache := NewScache(backend)
+	defer cache.Close()
 
 	// url not in cache, load data
 	url := ts.URL + "/post/42"

@@ -88,9 +88,11 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 	var coldCalls int32
 	lc1, err := NewLruCache(MaxKeys(5), MaxValSize(10), EventBus(ps))
 	require.Nil(t, err)
+	defer lc1.Close()
 
 	lc2, err := NewLruCache(MaxKeys(50), MaxValSize(100), EventBus(ps))
 	require.Nil(t, err)
+	defer lc2.Close()
 
 	// put 5 keys to cache1
 	for i := 0; i < 5; i++ {
@@ -99,7 +101,7 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 			atomic.AddInt32(&coldCalls, 1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
-		assert.Nil(t, e)
+		assert.NoError(t, e)
 		assert.Equal(t, fmt.Sprintf("result-%d", i), res.(string))
 		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
 	}
@@ -107,23 +109,27 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 	res, err := lc1.Get("key-3", func() (Value, error) {
 		return "result-blah", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result-3", res.(string), "should be cached")
 
+	assert.Equal(t, 0, len(ps.CalledKeys()), "no events")
+
 	// put 1 key to cache2
-	res, e := lc2.Get(fmt.Sprintf("key-1"), func() (Value, error) {
-		return fmt.Sprintf("result-111"), nil
+	res, e := lc2.Get("key-1", func() (Value, error) {
+		return "result-111", nil
 	})
-	assert.Nil(t, e)
-	assert.Equal(t, fmt.Sprintf("result-111"), res.(string))
+	assert.NoError(t, e)
+	assert.Equal(t, "result-111", res.(string))
 
 	// try to cache1 after maxKeys reached, will remove key-0
 	res, err = lc1.Get("key-X", func() (Value, error) {
 		return "result-X", nil
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "result-X", res.(string))
 	assert.Equal(t, 5, lc1.backend.Len())
+
+	assert.Equal(t, 1, len(ps.CalledKeys()), "1 event, key-0 expired")
 
 	assert.Equal(t, 1, lc2.backend.Len(), "cache2 still has key-1")
 
@@ -131,9 +137,15 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 	res, err = lc1.Get("key-X2", func() (Value, error) {
 		return "result-X", nil
 	})
-	assert.Nil(t, err)
-	assert.Equal(t, "result-2", res.(string))
-	assert.Equal(t, 1, lc2.backend.Len(), "cache2 removed key-1")
+	assert.NoError(t, err)
+	assert.Equal(t, "result-X", res.(string))
+
+	assert.Equal(t, 2, len(ps.CalledKeys()), "2 events, key-1 expired")
+
+	// wait for onBusEvent goroutines to finish
+	ps.Wait()
+
+	assert.Equal(t, 0, lc2.backend.Len(), "cache2 removed key-1")
 }
 
 // LruCache illustrates the use of LRU loading cache

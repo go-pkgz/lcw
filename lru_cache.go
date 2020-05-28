@@ -1,7 +1,6 @@
 package lcw
 
 import (
-	"log"
 	"sync/atomic"
 
 	"github.com/google/uuid"
@@ -151,7 +150,6 @@ func (c *LruCache) Close() error {
 // onBusEvent reacts on invalidation message triggered by event bus from another cache instance
 func (c *LruCache) onBusEvent(id, key string) {
 	if id != c.id && c.backend.Contains(key) { // prevent reaction on event from this cache
-		log.Println("!! ", id, key)
 		c.backend.Remove(key)
 	}
 }

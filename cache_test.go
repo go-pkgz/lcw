@@ -3,7 +3,6 @@ package lcw
 import (
 	"errors"
 	"fmt"
-	"log"
 	"math/rand"
 	"strings"
 	"sync"
@@ -661,19 +660,35 @@ func (s sizedString) MarshalBinary() (data []byte, err error) {
 type mockPubSub struct {
 	calledKeys []string
 	fns        []func(fromID string, key string)
+	sync.Mutex
+	sync.WaitGroup
+}
+
+func (m *mockPubSub) CalledKeys() []string {
+	m.Lock()
+	defer m.Unlock()
+	return m.calledKeys
 }
 
 func (m *mockPubSub) Subscribe(fn func(fromID string, key string)) error {
+	m.Lock()
+	defer m.Unlock()
 	m.fns = append(m.fns, fn)
 	return nil
 }
 
 func (m *mockPubSub) Publish(fromID, key string) error {
+	m.Lock()
+	defer m.Unlock()
 	m.calledKeys = append(m.calledKeys, key)
 	for _, fn := range m.fns {
+		fn := fn
+		m.Add(1)
 		// run in goroutine to prevent deadlock
-		go fn(fromID, key)
-		log.Println("!!!", fromID, key)
+		go func() {
+			fn(fromID, key)
+			m.Done()
+		}()
 	}
 	return nil
 }

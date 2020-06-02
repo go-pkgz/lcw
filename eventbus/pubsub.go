@@ -1,5 +1,5 @@
 // Package eventbus provides PubSub interface used for distributed cache invalidation,
-// as well as NopPubSub implementation.
+// as well as NopPubSub and RedisPubSub implementations.
 package eventbus
 
 // PubSub interface is used for distributed cache invalidation.

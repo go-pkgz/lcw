@@ -83,3 +83,4 @@ func (n *Nop) Stat() CacheStat {
 func (n *Nop) Close() error {
 	return nil
 }
+

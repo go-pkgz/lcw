@@ -659,7 +659,7 @@ func (s sizedString) MarshalBinary() (data []byte, err error) {
 
 type mockPubSub struct {
 	calledKeys []string
-	fns        []func(fromID string, key string)
+	fns        []func(fromID, key string)
 	sync.Mutex
 	sync.WaitGroup
 }
@@ -670,7 +670,7 @@ func (m *mockPubSub) CalledKeys() []string {
 	return m.calledKeys
 }
 
-func (m *mockPubSub) Subscribe(fn func(fromID string, key string)) error {
+func (m *mockPubSub) Subscribe(fn func(fromID, key string)) error {
 	m.Lock()
 	defer m.Unlock()
 	m.fns = append(m.fns, fn)

@@ -31,8 +31,8 @@ type RedisPubSub struct {
 }
 
 // Subscribe calls provided function on subscription channel provided on new RedisPubSub instance creation.
-// Should not be called more than once. Spawns a gorouting and does not return an error.
-func (m *RedisPubSub) Subscribe(fn func(fromID string, key string)) error {
+// Should not be called more than once. Spawns a goroutine and does not return an error.
+func (m *RedisPubSub) Subscribe(fn func(fromID, key string)) error {
 	go func(done <-chan struct{}, pubsub *redis.PubSub) {
 		for {
 			select {
@@ -48,7 +48,7 @@ func (m *RedisPubSub) Subscribe(fn func(fromID string, key string)) error {
 			// Process the message
 			if msg, ok := msg.(*redis.Message); ok {
 				payload := strings.Split(msg.Payload, "$")
-				fn(payload[0], payload[1])
+				fn(payload[0], strings.Join(payload[1:], "$"))
 			}
 		}
 	}(m.done, m.pubSub)

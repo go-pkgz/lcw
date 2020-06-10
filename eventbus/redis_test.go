@@ -27,12 +27,12 @@ func TestRedisPubSub(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, redisPubSub)
 	var called []string
-	assert.Nil(t, redisPubSub.Subscribe(func(fromID string, key string) {
+	assert.Nil(t, redisPubSub.Subscribe(func(fromID, key string) {
 		called = append(called, fromID, key)
 	}))
-	assert.NoError(t, redisPubSub.Publish("test_fromID", "test_key"))
+	assert.NoError(t, redisPubSub.Publish("test_fromID", "$test$key$"))
 	// Sleep which waits for Subscribe goroutine to pick up published changes
 	time.Sleep(time.Second)
 	assert.NoError(t, redisPubSub.Close())
-	assert.Equal(t, []string{"test_fromID", "test_key"}, called)
+	assert.Equal(t, []string{"test_fromID", "$test$key$"}, called)
 }

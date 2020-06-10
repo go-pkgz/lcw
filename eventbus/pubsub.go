@@ -6,15 +6,15 @@ package eventbus
 // Publish is called on each entry invalidation,
 // Subscribe is used for subscription for these events.
 type PubSub interface {
-	Publish(fromID string, key string) error
-	Subscribe(fn func(fromID string, key string)) error
+	Publish(fromID, key string) error
+	Subscribe(fn func(fromID, key string)) error
 }
 
 // NopPubSub implements default do-nothing pub-sub (event bus)
 type NopPubSub struct{}
 
 // Subscribe does nothing for NopPubSub
-func (n *NopPubSub) Subscribe(fn func(fromID string, key string)) error {
+func (n *NopPubSub) Subscribe(fn func(fromID, key string)) error {
 	return nil
 }
 

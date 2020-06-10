@@ -89,9 +89,9 @@ func OnEvicted(fn func(key string, value Value)) Option {
 }
 
 // EventBus sets PubSub for distributed cache invalidation
-func EventBus(pubsub eventbus.PubSub) Option {
+func EventBus(pubSub eventbus.PubSub) Option {
 	return func(o *options) error {
-		o.eventBus = pubsub
+		o.eventBus = pubSub
 		return nil
 	}
 }

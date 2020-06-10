@@ -54,6 +54,9 @@ func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
 				size := s.Size()
 				atomic.AddInt64(&res.currentSize, -1*int64(size))
 			}
+			// ignore the error on Publish as we don't have log inside the module and
+			// there is no other way to handle it: we publish the cache invalidation
+			// and hope for the best
 			_ = res.eventBus.Publish(res.id, key)
 		}),
 	)

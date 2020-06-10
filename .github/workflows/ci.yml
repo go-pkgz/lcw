@@ -20,6 +20,9 @@ jobs:
       - name: checkout
         uses: actions/checkout@v2
 
+      - name: start Redis
+        uses: supercharge/redis-github-action@1.1.0
+
       - name: build and test
         run: |
           go get -v
@@ -29,6 +32,7 @@ jobs:
         env:
           GO111MODULE: "on"
           TZ: "America/Chicago"
+          ENABLE_REDIS_TESTS: "true"
 
       - name: install golangci-lint and goveralls
         run: |

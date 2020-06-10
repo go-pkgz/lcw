@@ -37,7 +37,11 @@ func TestExpirableCache(t *testing.T) {
 	assert.Equal(t, 5, lc.Stat().Keys)
 	assert.Equal(t, int64(6), lc.Stat().Misses)
 
-	time.Sleep(55 * time.Millisecond)
+	// let key-0 expire, GitHub Actions friendly way
+	for lc.Stat().Keys > 4 {
+		lc.backend.DeleteExpired() // enforce DeleteExpired for GitHub earlier than TTL/2
+		time.Sleep(time.Millisecond * 10)
+	}
 	assert.Equal(t, 4, lc.Stat().Keys)
 
 	time.Sleep(210 * time.Millisecond)
@@ -111,4 +115,53 @@ func TestExpirableCache_BadOptions(t *testing.T) {
 
 	_, err = NewExpirableCache(TTL(-1))
 	assert.EqualError(t, err, "failed to set cache option: negative ttl")
+}
+
+func TestExpirableCacheWithBus(t *testing.T) {
+	ps := &mockPubSub{}
+	lc1, err := NewExpirableCache(MaxKeys(5), TTL(time.Millisecond*100), EventBus(ps))
+	require.NoError(t, err)
+	defer lc1.Close()
+
+	lc2, err := NewExpirableCache(MaxKeys(50), TTL(time.Millisecond*5000), EventBus(ps))
+	require.NoError(t, err)
+	defer lc2.Close()
+
+	// add 5 keys to the first node cache
+	for i := 0; i < 5; i++ {
+		i := i
+		_, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+			return fmt.Sprintf("result-%d", i), nil
+		})
+		assert.NoError(t, e)
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	assert.Equal(t, 0, len(ps.CalledKeys()), "no events")
+	assert.Equal(t, 5, lc1.Stat().Keys)
+	assert.Equal(t, int64(5), lc1.Stat().Misses)
+
+	// add key-1 key to the second node
+	_, e := lc2.Get("key-1", func() (Value, error) {
+		return "result-111", nil
+	})
+	assert.NoError(t, e)
+	assert.Equal(t, 1, lc2.Stat().Keys)
+	assert.Equal(t, int64(1), lc2.Stat().Misses, lc2.Stat())
+
+	// let key-0 expire, GitHub Actions friendly way
+	for lc1.Stat().Keys > 4 {
+		lc1.backend.DeleteExpired() // enforce DeleteExpired for GitHub earlier than TTL/2
+		ps.Wait()                   // wait for onBusEvent goroutines to finish
+		time.Sleep(time.Millisecond * 10)
+	}
+	assert.Equal(t, 4, lc1.Stat().Keys)
+	assert.Equal(t, 1, lc2.Stat().Keys, "key-1 still in cache2")
+	assert.Equal(t, 1, len(ps.CalledKeys()))
+
+	time.Sleep(210 * time.Millisecond) // let all keys expire
+	ps.Wait()                          // wait for onBusEvent goroutines to finish
+	assert.Equal(t, 6, len(ps.CalledKeys()), "6 events, key-1 expired %+v", ps.calledKeys)
+	assert.Equal(t, 0, lc1.Stat().Keys)
+	assert.Equal(t, 0, lc2.Stat().Keys, "key-1 removed from cache2")
 }

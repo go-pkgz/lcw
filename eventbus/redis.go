@@ -16,6 +16,7 @@ func NewRedisPubSub(addr, channel string) (*RedisPubSub, error) {
 	pubSub := client.Subscribe(channel)
 	// wait for subscription to be created and ignore the message
 	if _, err := pubSub.Receive(); err != nil {
+		_ = client.Close()
 		return nil, errors.Wrapf(err, "problem subscribing to channel %s on address %s", channel, addr)
 	}
 	return &RedisPubSub{client: client, pubSub: pubSub, channel: channel, done: make(chan struct{})}, nil

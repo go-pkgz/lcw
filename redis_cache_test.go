@@ -38,7 +38,7 @@ func TestExpirableRedisCache(t *testing.T) {
 	require.NoError(t, err)
 	for i := 0; i < 5; i++ {
 		i := i
-		_, e := rc.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+		_, e := rc.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 			return fmt.Sprintf("result-%d", i), nil
 		})
 		assert.NoError(t, e)
@@ -52,7 +52,7 @@ func TestExpirableRedisCache(t *testing.T) {
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
-	_, e := rc.Get("key-xx", func() (Value, error) {
+	_, e := rc.Get("key-xx", func() (interface{}, error) {
 		return "result-xx", nil
 	})
 	assert.NoError(t, e)
@@ -81,7 +81,7 @@ func TestRedisCache(t *testing.T) {
 	// put 5 keys to cache
 	for i := 0; i < 5; i++ {
 		i := i
-		res, e := rc.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+		res, e := rc.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 			atomic.AddInt32(&coldCalls, 1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
@@ -91,14 +91,14 @@ func TestRedisCache(t *testing.T) {
 	}
 
 	// check if really cached
-	res, err := rc.Get("key-3", func() (Value, error) {
+	res, err := rc.Get("key-3", func() (interface{}, error) {
 		return "result-blah", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-3", res.(string), "should be cached")
 
 	// try to cache after maxKeys reached
-	res, err = rc.Get("key-X", func() (Value, error) {
+	res, err = rc.Get("key-X", func() (interface{}, error) {
 		return "result-X", nil
 	})
 	assert.NoError(t, err)
@@ -106,20 +106,20 @@ func TestRedisCache(t *testing.T) {
 	assert.Equal(t, int64(5), rc.backend.DBSize().Val())
 
 	// put to cache and make sure it cached
-	res, err = rc.Get("key-Z", func() (Value, error) {
+	res, err = rc.Get("key-Z", func() (interface{}, error) {
 		return "result-Z", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-Z", res.(string))
 
-	res, err = rc.Get("key-Z", func() (Value, error) {
+	res, err = rc.Get("key-Z", func() (interface{}, error) {
 		return "result-Zzzz", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-Zzzz", res.(string), "got non-cached value")
 	assert.Equal(t, 5, rc.keys())
 
-	res, err = rc.Get("key-Zzzzzzz", func() (Value, error) {
+	res, err = rc.Get("key-Zzzzzzz", func() (interface{}, error) {
 		return "result-Zzzz", nil
 	})
 	assert.NoError(t, err)
@@ -141,14 +141,14 @@ func TestRedisCacheErrors(t *testing.T) {
 	require.NoError(t, err)
 	defer rc.Close()
 
-	res, err := rc.Get("error-key-Z", func() (Value, error) {
+	res, err := rc.Get("error-key-Z", func() (interface{}, error) {
 		return "error-result-Z", errors.New("some error")
 	})
 	assert.Error(t, err)
 	assert.Equal(t, "error-result-Z", res.(string))
 	assert.Equal(t, int64(1), rc.Stat().Errors)
 
-	res, err = rc.Get("error-key-Z2", func() (Value, error) {
+	res, err = rc.Get("error-key-Z2", func() (interface{}, error) {
 		return fakeString("error-result-Z2"), nil
 	})
 	assert.Error(t, err)
@@ -156,7 +156,7 @@ func TestRedisCacheErrors(t *testing.T) {
 	assert.Equal(t, int64(2), rc.Stat().Errors)
 
 	server.Close()
-	res, err = rc.Get("error-key-Z3", func() (Value, error) {
+	res, err = rc.Get("error-key-Z3", func() (interface{}, error) {
 		return fakeString("error-result-Z3"), nil
 	})
 	assert.Error(t, err)

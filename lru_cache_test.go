@@ -28,7 +28,7 @@ func TestLruCache_MaxKeys(t *testing.T) {
 	// put 5 keys to cache
 	for i := 0; i < 5; i++ {
 		i := i
-		res, e := lc.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+		res, e := lc.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 			atomic.AddInt32(&coldCalls, 1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
@@ -42,14 +42,14 @@ func TestLruCache_MaxKeys(t *testing.T) {
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
 	// check if really cached
-	res, err := lc.Get("key-3", func() (Value, error) {
+	res, err := lc.Get("key-3", func() (interface{}, error) {
 		return "result-blah", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-3", res.(string), "should be cached")
 
 	// try to cache after maxKeys reached
-	res, err = lc.Get("key-X", func() (Value, error) {
+	res, err = lc.Get("key-X", func() (interface{}, error) {
 		return "result-X", nil
 	})
 	assert.NoError(t, err)
@@ -57,13 +57,13 @@ func TestLruCache_MaxKeys(t *testing.T) {
 	assert.Equal(t, 5, lc.backend.Len())
 
 	// put to cache and make sure it cached
-	res, err = lc.Get("key-Z", func() (Value, error) {
+	res, err = lc.Get("key-Z", func() (interface{}, error) {
 		return "result-Z", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-Z", res.(string))
 
-	res, err = lc.Get("key-Z", func() (Value, error) {
+	res, err = lc.Get("key-Z", func() (interface{}, error) {
 		return "result-Zzzz", nil
 	})
 	assert.NoError(t, err)
@@ -103,7 +103,7 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 	// put 5 keys to cache1
 	for i := 0; i < 5; i++ {
 		i := i
-		res, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+		res, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 			atomic.AddInt32(&coldCalls, 1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
@@ -112,7 +112,7 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
 	}
 	// check if really cached
-	res, err := lc1.Get("key-3", func() (Value, error) {
+	res, err := lc1.Get("key-3", func() (interface{}, error) {
 		return "result-blah", nil
 	})
 	assert.NoError(t, err)
@@ -121,14 +121,14 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 	assert.Equal(t, 0, len(ps.CalledKeys()), "no events")
 
 	// put 1 key to cache2
-	res, e := lc2.Get("key-1", func() (Value, error) {
+	res, e := lc2.Get("key-1", func() (interface{}, error) {
 		return "result-111", nil
 	})
 	assert.NoError(t, e)
 	assert.Equal(t, "result-111", res.(string))
 
 	// try to cache1 after maxKeys reached, will remove key-0
-	res, err = lc1.Get("key-X", func() (Value, error) {
+	res, err = lc1.Get("key-X", func() (interface{}, error) {
 		return "result-X", nil
 	})
 	assert.NoError(t, err)
@@ -140,7 +140,7 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 	assert.Equal(t, 1, lc2.backend.Len(), "cache2 still has key-1")
 
 	// try to cache1 after maxKeys reached, will remove key-1
-	res, err = lc1.Get("key-X2", func() (Value, error) {
+	res, err = lc1.Get("key-X2", func() (interface{}, error) {
 		return "result-X", nil
 	})
 	assert.NoError(t, err)
@@ -178,7 +178,7 @@ func TestLruCache_MaxKeysWithRedis(t *testing.T) {
 	// put 5 keys to cache1
 	for i := 0; i < 5; i++ {
 		i := i
-		res, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+		res, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 			atomic.AddInt32(&coldCalls, 1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
@@ -187,21 +187,21 @@ func TestLruCache_MaxKeysWithRedis(t *testing.T) {
 		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
 	}
 	// check if really cached
-	res, err := lc1.Get("key-3", func() (Value, error) {
+	res, err := lc1.Get("key-3", func() (interface{}, error) {
 		return "result-blah", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-3", res.(string), "should be cached")
 
 	// put 1 key to cache2
-	res, e := lc2.Get("key-1", func() (Value, error) {
+	res, e := lc2.Get("key-1", func() (interface{}, error) {
 		return "result-111", nil
 	})
 	assert.NoError(t, e)
 	assert.Equal(t, "result-111", res.(string))
 
 	// try to cache1 after maxKeys reached, will remove key-0
-	res, err = lc1.Get("key-X", func() (Value, error) {
+	res, err = lc1.Get("key-X", func() (interface{}, error) {
 		return "result-X", nil
 	})
 	assert.NoError(t, err)
@@ -211,7 +211,7 @@ func TestLruCache_MaxKeysWithRedis(t *testing.T) {
 	assert.Equal(t, 1, lc2.backend.Len(), "cache2 still has key-1")
 
 	// try to cache1 after maxKeys reached, will remove key-1
-	res, err = lc1.Get("key-X2", func() (Value, error) {
+	res, err = lc1.Get("key-X2", func() (interface{}, error) {
 		return "result-X", nil
 	})
 	assert.NoError(t, err)
@@ -257,7 +257,7 @@ func ExampleLruCache() {
 
 	// url not in cache, load data
 	url := ts.URL + "/post/42"
-	val, err := cache.Get(url, func() (val Value, err error) {
+	val, err := cache.Get(url, func() (val interface{}, err error) {
 		return loadURL(url)
 	})
 	if err != nil {
@@ -266,7 +266,7 @@ func ExampleLruCache() {
 	fmt.Println(val.(string))
 
 	// url not in cache, load data
-	val, err = cache.Get(url, func() (val Value, err error) {
+	val, err = cache.Get(url, func() (val interface{}, err error) {
 		return loadURL(url)
 	})
 	if err != nil {
@@ -275,7 +275,7 @@ func ExampleLruCache() {
 	fmt.Println(val.(string))
 
 	// url cached, skip load and get from the cache
-	val, err = cache.Get(url, func() (val Value, err error) {
+	val, err = cache.Get(url, func() (val interface{}, err error) {
 		return loadURL(url)
 	})
 	if err != nil {

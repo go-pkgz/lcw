@@ -116,7 +116,7 @@ func TestUrl_NewRedis(t *testing.T) {
 	u = fmt.Sprintf("redis://%s?db=1&ttl=zz10s", srv.Addr())
 	_, err = New(u)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ttl query param zz10s: time: invalid duration zz10s")
+	assert.Contains(t, err.Error(), "ttl query param zz10s: time: invalid duration")
 
 	_, err = New("redis://localhost:xxx?db=1")
 	require.Error(t, err)

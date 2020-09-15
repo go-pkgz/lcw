@@ -16,7 +16,7 @@ func TestExpirableCache(t *testing.T) {
 	require.NoError(t, err)
 	for i := 0; i < 5; i++ {
 		i := i
-		_, e := lc.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+		_, e := lc.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 			return fmt.Sprintf("result-%d", i), nil
 		})
 		assert.NoError(t, e)
@@ -30,7 +30,7 @@ func TestExpirableCache(t *testing.T) {
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
-	_, e := lc.Get("key-xx", func() (Value, error) {
+	_, e := lc.Get("key-xx", func() (interface{}, error) {
 		return "result-xx", nil
 	})
 	assert.NoError(t, e)
@@ -59,7 +59,7 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	// put 5 keys to cache
 	for i := 0; i < 5; i++ {
 		i := i
-		res, e := lc.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+		res, e := lc.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 			atomic.AddInt32(&coldCalls, 1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
@@ -69,14 +69,14 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	}
 
 	// check if really cached
-	res, err := lc.Get("key-3", func() (Value, error) {
+	res, err := lc.Get("key-3", func() (interface{}, error) {
 		return "result-blah", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-3", res.(string), "should be cached")
 
 	// try to cache after maxKeys reached
-	res, err = lc.Get("key-X", func() (Value, error) {
+	res, err = lc.Get("key-X", func() (interface{}, error) {
 		return "result-X", nil
 	})
 	assert.NoError(t, err)
@@ -84,13 +84,13 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	assert.Equal(t, 5, lc.keys())
 
 	// put to cache and make sure it cached
-	res, err = lc.Get("key-Z", func() (Value, error) {
+	res, err = lc.Get("key-Z", func() (interface{}, error) {
 		return "result-Z", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-Z", res.(string))
 
-	res, err = lc.Get("key-Z", func() (Value, error) {
+	res, err = lc.Get("key-Z", func() (interface{}, error) {
 		return "result-Zzzz", nil
 	})
 	assert.NoError(t, err)
@@ -130,7 +130,7 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	// add 5 keys to the first node cache
 	for i := 0; i < 5; i++ {
 		i := i
-		_, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+		_, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 			return fmt.Sprintf("result-%d", i), nil
 		})
 		assert.NoError(t, e)
@@ -142,7 +142,7 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	assert.Equal(t, int64(5), lc1.Stat().Misses)
 
 	// add key-1 key to the second node
-	_, e := lc2.Get("key-1", func() (Value, error) {
+	_, e := lc2.Get("key-1", func() (interface{}, error) {
 		return "result-111", nil
 	})
 	assert.NoError(t, e)

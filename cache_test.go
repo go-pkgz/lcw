@@ -18,7 +18,7 @@ import (
 func TestNop_Get(t *testing.T) {
 	var coldCalls int32
 	var c LoadingCache = NewNopCache()
-	res, err := c.Get("key1", func() (Value, error) {
+	res, err := c.Get("key1", func() (interface{}, error) {
 		atomic.AddInt32(&coldCalls, 1)
 		return "result", nil
 	})
@@ -26,7 +26,7 @@ func TestNop_Get(t *testing.T) {
 	assert.Equal(t, "result", res.(string))
 	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
 
-	res, err = c.Get("key1", func() (Value, error) {
+	res, err = c.Get("key1", func() (interface{}, error) {
 		atomic.AddInt32(&coldCalls, 1)
 		return "result2", nil
 	})
@@ -40,7 +40,7 @@ func TestNop_Get(t *testing.T) {
 func TestNop_Peek(t *testing.T) {
 	var coldCalls int32
 	c := NewNopCache()
-	res, err := c.Get("key1", func() (Value, error) {
+	res, err := c.Get("key1", func() (interface{}, error) {
 		atomic.AddInt32(&coldCalls, 1)
 		return "result", nil
 	})
@@ -65,7 +65,7 @@ func TestCache_Get(t *testing.T) {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			var coldCalls int32
-			res, err := c.Get("key", func() (Value, error) {
+			res, err := c.Get("key", func() (interface{}, error) {
 				atomic.AddInt32(&coldCalls, 1)
 				return "result", nil
 			})
@@ -73,7 +73,7 @@ func TestCache_Get(t *testing.T) {
 			assert.Equal(t, "result", res.(string))
 			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
 
-			res, err = c.Get("key", func() (Value, error) {
+			res, err = c.Get("key", func() (interface{}, error) {
 				atomic.AddInt32(&coldCalls, 1)
 				return "result2", nil
 			})
@@ -82,14 +82,14 @@ func TestCache_Get(t *testing.T) {
 			assert.Equal(t, "result", res.(string))
 			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls), "cache hit")
 
-			_, err = c.Get("key-2", func() (Value, error) {
+			_, err = c.Get("key-2", func() (interface{}, error) {
 				atomic.AddInt32(&coldCalls, 1)
 				return "result2", errors.New("some error")
 			})
 			assert.Error(t, err)
 			assert.Equal(t, int32(2), atomic.LoadInt32(&coldCalls), "cache hit")
 
-			_, err = c.Get("key-2", func() (Value, error) {
+			_, err = c.Get("key-2", func() (interface{}, error) {
 				atomic.AddInt32(&coldCalls, 1)
 				return "result2", errors.New("some error")
 			})
@@ -107,13 +107,13 @@ func TestCache_MaxValueSize(t *testing.T) {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			// put good size value to cache and make sure it cached
-			res, err := c.Get("key-Z", func() (Value, error) {
+			res, err := c.Get("key-Z", func() (interface{}, error) {
 				return sizedString("result-Z"), nil
 			})
 			assert.NoError(t, err)
 			assert.Equal(t, sizedString("result-Z"), res.(sizedString))
 
-			res, err = c.Get("key-Z", func() (Value, error) {
+			res, err = c.Get("key-Z", func() (interface{}, error) {
 				return sizedString("result-Zzzz"), nil
 			})
 			if s, ok := res.(string); ok {
@@ -123,7 +123,7 @@ func TestCache_MaxValueSize(t *testing.T) {
 			assert.Equal(t, sizedString("result-Z"), res.(sizedString), "got cached value")
 
 			// put too big value to cache and make sure it is not cached
-			res, err = c.Get("key-Big", func() (Value, error) {
+			res, err = c.Get("key-Big", func() (interface{}, error) {
 				return sizedString("1234567890"), nil
 			})
 			if s, ok := res.(string); ok {
@@ -132,7 +132,7 @@ func TestCache_MaxValueSize(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, sizedString("1234567890"), res.(sizedString))
 
-			res, err = c.Get("key-Big", func() (Value, error) {
+			res, err = c.Get("key-Big", func() (interface{}, error) {
 				return sizedString("result-big"), nil
 			})
 			if s, ok := res.(string); ok {
@@ -142,13 +142,13 @@ func TestCache_MaxValueSize(t *testing.T) {
 			assert.Equal(t, sizedString("result-big"), res.(sizedString), "got not cached value")
 
 			// put too big value to cache but not Sizer
-			res, err = c.Get("key-Big2", func() (Value, error) {
+			res, err = c.Get("key-Big2", func() (interface{}, error) {
 				return "1234567890", nil
 			})
 			assert.NoError(t, err)
 			assert.Equal(t, "1234567890", res.(string))
 
-			res, err = c.Get("key-Big2", func() (Value, error) {
+			res, err = c.Get("key-Big2", func() (interface{}, error) {
 				return "xyz", nil
 			})
 			assert.NoError(t, err)
@@ -165,7 +165,7 @@ func TestCache_MaxCacheSize(t *testing.T) {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			// put good size value to cache and make sure it cached
-			res, err := c.Get("key-Z", func() (Value, error) {
+			res, err := c.Get("key-Z", func() (interface{}, error) {
 				return sizedString("result-Z"), nil
 			})
 			assert.NoError(t, err)
@@ -173,7 +173,7 @@ func TestCache_MaxCacheSize(t *testing.T) {
 				res = sizedString(s)
 			}
 			assert.Equal(t, sizedString("result-Z"), res.(sizedString))
-			res, err = c.Get("key-Z", func() (Value, error) {
+			res, err = c.Get("key-Z", func() (interface{}, error) {
 				return sizedString("result-Zzzz"), nil
 			})
 			if s, ok := res.(string); ok {
@@ -184,7 +184,7 @@ func TestCache_MaxCacheSize(t *testing.T) {
 			if _, ok := c.(*RedisCache); !ok {
 				assert.Equal(t, int64(8), c.size())
 			}
-			_, err = c.Get("key-Z2", func() (Value, error) {
+			_, err = c.Get("key-Z2", func() (interface{}, error) {
 				return sizedString("result-Y"), nil
 			})
 			assert.NoError(t, err)
@@ -193,7 +193,7 @@ func TestCache_MaxCacheSize(t *testing.T) {
 			}
 
 			// this will cause removal
-			_, err = c.Get("key-Z3", func() (Value, error) {
+			_, err = c.Get("key-Z3", func() (interface{}, error) {
 				return sizedString("result-Z"), nil
 			})
 			assert.NoError(t, err)
@@ -220,7 +220,7 @@ func TestCache_MaxCacheSizeParallel(t *testing.T) {
 				go func() {
 					time.Sleep(time.Duration(rand.Intn(100)) * time.Nanosecond)
 					defer wg.Done()
-					res, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+					res, err := c.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 						return sizedString(fmt.Sprintf("result-%d", i)), nil
 					})
 					require.NoError(t, err)
@@ -244,25 +244,25 @@ func TestCache_MaxKeySize(t *testing.T) {
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
-			res, err := c.Get("key", func() (Value, error) {
+			res, err := c.Get("key", func() (interface{}, error) {
 				return "value", nil
 			})
 			assert.NoError(t, err)
 			assert.Equal(t, "value", res.(string))
 
-			res, err = c.Get("key", func() (Value, error) {
+			res, err = c.Get("key", func() (interface{}, error) {
 				return "valueXXX", nil
 			})
 			assert.NoError(t, err)
 			assert.Equal(t, "value", res.(string), "cached")
 
-			res, err = c.Get("key1234", func() (Value, error) {
+			res, err = c.Get("key1234", func() (interface{}, error) {
 				return "value", nil
 			})
 			assert.NoError(t, err)
 			assert.Equal(t, "value", res.(string))
 
-			res, err = c.Get("key1234", func() (Value, error) {
+			res, err = c.Get("key1234", func() (interface{}, error) {
 				return "valueXYZ", nil
 			})
 			assert.NoError(t, err)
@@ -279,7 +279,7 @@ func TestCache_Peek(t *testing.T) {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			var coldCalls int32
-			res, err := c.Get("key", func() (Value, error) {
+			res, err := c.Get("key", func() (interface{}, error) {
 				atomic.AddInt32(&coldCalls, 1)
 				return "result", nil
 			})
@@ -303,7 +303,7 @@ func TestLruCache_ParallelHits(t *testing.T) {
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
 			var coldCalls int32
 
-			res, err := c.Get("key", func() (Value, error) {
+			res, err := c.Get("key", func() (interface{}, error) {
 				return "value", nil
 			})
 			assert.NoError(t, err)
@@ -315,7 +315,7 @@ func TestLruCache_ParallelHits(t *testing.T) {
 				i := i
 				go func() {
 					defer wg.Done()
-					res, err := c.Get("key", func() (Value, error) {
+					res, err := c.Get("key", func() (interface{}, error) {
 						atomic.AddInt32(&coldCalls, 1)
 						return fmt.Sprintf("result-%d", i), nil
 					})
@@ -340,7 +340,7 @@ func TestCache_Purge(t *testing.T) {
 			// fill cache
 			for i := 0; i < 1000; i++ {
 				i := i
-				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 					atomic.AddInt32(&coldCalls, 1)
 					return fmt.Sprintf("result-%d", i), nil
 				})
@@ -367,7 +367,7 @@ func TestCache_Invalidate(t *testing.T) {
 			// fill cache
 			for i := 0; i < 1000; i++ {
 				i := i
-				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 					atomic.AddInt32(&coldCalls, 1)
 					return fmt.Sprintf("result-%d", i), nil
 				})
@@ -381,14 +381,14 @@ func TestCache_Invalidate(t *testing.T) {
 			})
 
 			assert.Equal(t, 900, c.keys(), "100 keys removed")
-			res, err := c.Get("key-1", func() (Value, error) {
+			res, err := c.Get("key-1", func() (interface{}, error) {
 				atomic.AddInt32(&coldCalls, 1)
 				return "result-xxx", nil
 			})
 			require.NoError(t, err)
 			assert.Equal(t, "result-1", res.(string), "from the cache")
 
-			res, err = c.Get("key-10", func() (Value, error) {
+			res, err = c.Get("key-10", func() (interface{}, error) {
 				atomic.AddInt32(&coldCalls, 1)
 				return "result-xxx", nil
 			})
@@ -408,7 +408,7 @@ func TestCache_Delete(t *testing.T) {
 			// fill cache
 			for i := 0; i < 1000; i++ {
 				i := i
-				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 					return sizedString(fmt.Sprintf("result-%d", i)), nil
 				})
 				require.NoError(t, err)
@@ -428,9 +428,9 @@ func TestCache_Delete(t *testing.T) {
 
 func TestCache_DeleteWithEvent(t *testing.T) {
 	var evKey string
-	var evVal Value
+	var evVal interface{}
 	var evCount int
-	onEvict := func(key string, value Value) {
+	onEvict := func(key string, value interface{}) {
 		evKey = key
 		evVal = value
 		evCount++
@@ -450,7 +450,7 @@ func TestCache_DeleteWithEvent(t *testing.T) {
 			// fill cache
 			for i := 0; i < 1000; i++ {
 				i := i
-				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 					return sizedString(fmt.Sprintf("result-%d", i)), nil
 				})
 				require.NoError(t, err)
@@ -477,7 +477,7 @@ func TestCache_Stats(t *testing.T) {
 			// fill cache
 			for i := 0; i < 100; i++ {
 				i := i
-				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (Value, error) {
+				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
 					return sizedString(fmt.Sprintf("result-%d", i)), nil
 				})
 				require.NoError(t, err)
@@ -490,7 +490,7 @@ func TestCache_Stats(t *testing.T) {
 				assert.Equal(t, CacheStat{Hits: 0, Misses: 100, Keys: 100, Size: 890}, stats)
 			}
 
-			_, err := c.Get("key-1", func() (Value, error) {
+			_, err := c.Get("key-1", func() (interface{}, error) {
 				return "xyz", nil
 			})
 			require.NoError(t, err)
@@ -501,7 +501,7 @@ func TestCache_Stats(t *testing.T) {
 				assert.Equal(t, CacheStat{Hits: 1, Misses: 100, Keys: 100, Size: 890}, c.Stat())
 			}
 
-			_, err = c.Get("key-1123", func() (Value, error) {
+			_, err = c.Get("key-1123", func() (interface{}, error) {
 				return sizedString("xyz"), nil
 			})
 			require.NoError(t, err)
@@ -512,7 +512,7 @@ func TestCache_Stats(t *testing.T) {
 				assert.Equal(t, CacheStat{Hits: 1, Misses: 101, Keys: 101, Size: 893}, c.Stat())
 			}
 
-			_, err = c.Get("key-9999", func() (Value, error) {
+			_, err = c.Get("key-9999", func() (interface{}, error) {
 				return nil, errors.New("err")
 			})
 			require.Error(t, err)
@@ -535,13 +535,13 @@ func ExampleLoadingCache_Get() {
 	defer c.Close()
 
 	// try to get from cache and because mykey is not in will put it
-	_, _ = c.Get("mykey", func() (Value, error) {
+	_, _ = c.Get("mykey", func() (interface{}, error) {
 		fmt.Println("cache miss 1")
 		return "myval-1", nil
 	})
 
 	// get from cache, func won't run because mykey in
-	v, err := c.Get("mykey", func() (Value, error) {
+	v, err := c.Get("mykey", func() (interface{}, error) {
 		fmt.Println("cache miss 2")
 		return "myval-2", nil
 	})
@@ -557,7 +557,7 @@ func ExampleLoadingCache_Get() {
 // ExampleLoadingCache_Delete illustrates cache value eviction and OnEvicted function usage.
 func ExampleLoadingCache_Delete() {
 	// make expirable cache (30m TTL) with up to 10 keys. Set callback on eviction event
-	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30), OnEvicted(func(key string, value Value) {
+	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30), OnEvicted(func(key string, value interface{}) {
 		fmt.Println("key " + key + " evicted")
 	}))
 	if err != nil {
@@ -566,7 +566,7 @@ func ExampleLoadingCache_Delete() {
 	defer c.Close()
 
 	// try to get from cache and because mykey is not in will put it
-	_, _ = c.Get("mykey", func() (Value, error) {
+	_, _ = c.Get("mykey", func() (interface{}, error) {
 		return "myval-1", nil
 	})
 
@@ -588,13 +588,13 @@ func ExampleLoadingCacheMutability() {
 	mutableSlice := []string{"key1", "key2"}
 
 	// put mutableSlice in "mutableSlice" cache key
-	_, _ = c.Get("mutableSlice", func() (Value, error) {
+	_, _ = c.Get("mutableSlice", func() (interface{}, error) {
 		return mutableSlice, nil
 	})
 
 	// get from cache, func won't run because mutableSlice is cached
 	// value is original now
-	v, _ := c.Get("mutableSlice", func() (Value, error) {
+	v, _ := c.Get("mutableSlice", func() (interface{}, error) {
 		return nil, nil
 	})
 	fmt.Printf("got %v slice from cache\n", v)
@@ -604,7 +604,7 @@ func ExampleLoadingCacheMutability() {
 
 	// get from cache, func won't run because mutableSlice is cached
 	// value is changed inside the cache now because mutableSlice stored as-is, in mutable state
-	v, _ = c.Get("mutableSlice", func() (Value, error) {
+	v, _ = c.Get("mutableSlice", func() (interface{}, error) {
 		return nil, nil
 	})
 	fmt.Printf("got %v slice from cache after it's change outside of cache\n", v)

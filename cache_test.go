@@ -551,7 +551,7 @@ func ExampleLoadingCache_Get() {
 	}
 	fmt.Printf("got %s from cache, stats: %s", v.(string), c.Stat())
 	// Output: cache miss 1
-	// got myval-1 from cache, stats: {hits:1, misses:1, ratio:50.0%, keys:1, size:0, errors:0}
+	// got myval-1 from cache, stats: {hits:1, misses:1, ratio:0.50, keys:1, size:0, errors:0}
 }
 
 // ExampleLoadingCache_Delete illustrates cache value eviction and OnEvicted function usage.
@@ -573,7 +573,7 @@ func ExampleLoadingCache_Delete() {
 	c.Delete("mykey")
 	fmt.Println("stats: " + c.Stat().String())
 	// Output: key mykey evicted
-	// stats: {hits:0, misses:1, ratio:0.0%, keys:0, size:0, errors:0}
+	// stats: {hits:0, misses:1, ratio:0.00, keys:0, size:0, errors:0}
 }
 
 // nolint:govet //false positive due to example name

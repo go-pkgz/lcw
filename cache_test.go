@@ -54,7 +54,7 @@ func TestNop_Peek(t *testing.T) {
 
 func TestStat_String(t *testing.T) {
 	s := CacheStat{Keys: 100, Hits: 60, Misses: 10, Size: 12345, Errors: 5}
-	assert.Equal(t, "{hits:60, misses:10, ratio:85.7%, keys:100, size:12345, errors:5}", s.String())
+	assert.Equal(t, "{hits:60, misses:10, ratio:0.86, keys:100, size:12345, errors:5}", s.String())
 }
 
 func TestCache_Get(t *testing.T) {

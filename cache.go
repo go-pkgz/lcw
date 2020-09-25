@@ -41,8 +41,12 @@ type CacheStat struct {
 
 // String formats cache stats
 func (s CacheStat) String() string {
-	return fmt.Sprintf("{hits:%d, misses:%d, ratio:%.1f%%, keys:%d, size:%d, errors:%d}",
-		s.Hits, s.Misses, 100*(float64(s.Hits)/float64(s.Hits+s.Misses)), s.Keys, s.Size, s.Errors)
+	ratio := 0.0
+	if s.Hits+s.Misses > 0 {
+		ratio = float64(s.Hits) / float64(s.Hits+s.Misses)
+	}
+	return fmt.Sprintf("{hits:%d, misses:%d, ratio:%.2f, keys:%d, size:%d, errors:%d}",
+		s.Hits, s.Misses, ratio, s.Keys, s.Size, s.Errors)
 }
 
 // Nop is do-nothing implementation of LoadingCache

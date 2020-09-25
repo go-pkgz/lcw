@@ -294,5 +294,5 @@ func ExampleLruCache() {
 	// <html><body>test response</body></html>
 	// <html><body>test response</body></html>
 	// <html><body>test response</body></html>
-	// {hits:2, misses:1, ratio:66.7%, keys:1, size:0, errors:0}
+	// {hits:2, misses:1, ratio:0.67, keys:1, size:0, errors:0}
 }

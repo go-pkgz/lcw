@@ -13,7 +13,7 @@ func OnEvicted(fn func(key string, value interface{})) Option {
 	}
 }
 
-// PurgeEvery functional option defines purge interval
+// PurgeEvery functional option defines deleteExpired interval
 // by default it is 0, i.e. never. If MaxKeys set to any non-zero this default will be 5minutes
 func PurgeEvery(interval time.Duration) Option {
 	return func(lc *LoadingCache) error {
@@ -37,6 +37,14 @@ func MaxKeys(max int) Option {
 func TTL(ttl time.Duration) Option {
 	return func(lc *LoadingCache) error {
 		lc.ttl = ttl
+		return nil
+	}
+}
+
+// LRU sets cache to LRU (Least Recently Used) eviction mode.
+func LRU() Option {
+	return func(lc *LoadingCache) error {
+		lc.isLRU = true
 		return nil
 	}
 }

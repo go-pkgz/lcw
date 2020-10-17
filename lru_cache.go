@@ -4,18 +4,15 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/go-pkgz/lcw/eventbus"
-	"github.com/google/uuid"
-	lru "github.com/hashicorp/golang-lru"
+	"github.com/go-pkgz/lcw/internal/cache"
 )
 
-// LruCache wraps lru.LruCache with loading cache Get and size limits
+// LruCache wraps LoadingCache with loading cache Get and size limits
 type LruCache struct {
 	options
 	CacheStat
-	backend     *lru.Cache
+	backend     *cache.LoadingCache
 	currentSize int64
-	id          string // uuid identifying cache instance
 }
 
 // NewLruCache makes LRU LoadingCache implementation, 1000 max keys by default
@@ -24,9 +21,7 @@ func NewLruCache(opts ...Option) (*LruCache, error) {
 		options: options{
 			maxKeys:      1000,
 			maxValueSize: 0,
-			eventBus:     &eventbus.NopPubSub{},
 		},
-		id: uuid.New().String(),
 	}
 	for _, opt := range opts {
 		if err := opt(&res.options); err != nil {
@@ -34,33 +29,25 @@ func NewLruCache(opts ...Option) (*LruCache, error) {
 		}
 	}
 
-	err := res.init()
-	return &res, err
-}
-
-func (c *LruCache) init() error {
-	if err := c.eventBus.Subscribe(c.onBusEvent); err != nil {
-		return fmt.Errorf("can't subscribe to event bus: %w", err)
+	backend, err := cache.NewLoadingCache(
+		cache.LRU(),
+		cache.MaxKeys(res.maxKeys),
+		cache.OnEvicted(func(key string, value interface{}) {
+			if res.onEvicted != nil {
+				res.onEvicted(key, value)
+			}
+			if s, ok := value.(Sizer); ok {
+				size := s.Size()
+				atomic.AddInt64(&res.currentSize, -1*int64(size))
+			}
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating backend: %w", err)
 	}
+	res.backend = backend
 
-	onEvicted := func(key interface{}, value interface{}) {
-		if c.onEvicted != nil {
-			c.onEvicted(key.(string), value)
-		}
-		if s, ok := value.(Sizer); ok {
-			size := s.Size()
-			atomic.AddInt64(&c.currentSize, -1*int64(size))
-		}
-		_ = c.eventBus.Publish(c.id, key.(string)) // signal invalidation to other nodes
-	}
-
-	var err error
-	// OnEvicted called automatically for expired and manually deleted
-	if c.backend, err = lru.NewWithEvict(c.maxKeys, onEvicted); err != nil {
-		return fmt.Errorf("failed to make lru cache backend: %w", err)
-	}
-
-	return nil
+	return &res, nil
 }
 
 // Get gets value by key or load with fn if not found in cache
@@ -77,21 +64,18 @@ func (c *LruCache) Get(key string, fn func() (interface{}, error)) (data interfa
 
 	atomic.AddInt64(&c.Misses, 1)
 
-	if !c.allowed(key, data) {
-		return data, nil
-	}
+	if c.allowed(key, data) {
+		c.backend.Set(key, data)
 
-	c.backend.Add(key, data)
-
-	if s, ok := data.(Sizer); ok {
-		atomic.AddInt64(&c.currentSize, int64(s.Size()))
-		if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize) > c.maxCacheSize {
-			for atomic.LoadInt64(&c.currentSize) > c.maxCacheSize {
-				c.backend.RemoveOldest()
+		if s, ok := data.(Sizer); ok {
+			atomic.AddInt64(&c.currentSize, int64(s.Size()))
+			if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize) > c.maxCacheSize {
+				for atomic.LoadInt64(&c.currentSize) > c.maxCacheSize {
+					c.backend.RemoveOldest()
+				}
 			}
 		}
 	}
-
 	return data, nil
 }
 
@@ -108,26 +92,17 @@ func (c *LruCache) Purge() {
 
 // Invalidate removes keys with passed predicate fn, i.e. fn(key) should be true to get evicted
 func (c *LruCache) Invalidate(fn func(key string) bool) {
-	for _, k := range c.backend.Keys() { // Keys() returns copy of cache's key, safe to remove directly
-		if key, ok := k.(string); ok && fn(key) {
-			c.backend.Remove(key)
-		}
-	}
+	c.backend.InvalidateFn(fn)
 }
 
 // Delete cache item by key
 func (c *LruCache) Delete(key string) {
-	c.backend.Remove(key)
+	c.backend.Invalidate(key)
 }
 
 // Keys returns cache keys
 func (c *LruCache) Keys() (res []string) {
-	keys := c.backend.Keys()
-	res = make([]string, 0, len(keys))
-	for _, key := range keys {
-		res = append(res, key.(string))
-	}
-	return res
+	return c.backend.Keys()
 }
 
 // Stat returns cache statistics
@@ -141,16 +116,10 @@ func (c *LruCache) Stat() CacheStat {
 	}
 }
 
-// Close does nothing for this type of cache
+// Close kills cleanup goroutine
 func (c *LruCache) Close() error {
+	c.backend.Close()
 	return nil
-}
-
-// onBusEvent reacts on invalidation message triggered by event bus from another cache instance
-func (c *LruCache) onBusEvent(id, key string) {
-	if id != c.id && c.backend.Contains(key) { // prevent reaction on event from this cache
-		c.backend.Remove(key)
-	}
 }
 
 func (c *LruCache) size() int64 {
@@ -158,7 +127,7 @@ func (c *LruCache) size() int64 {
 }
 
 func (c *LruCache) keys() int {
-	return c.backend.Len()
+	return c.backend.ItemCount()
 }
 
 func (c *LruCache) allowed(key string, data interface{}) bool {

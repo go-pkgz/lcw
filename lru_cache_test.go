@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sort"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -38,7 +37,6 @@ func TestLruCache_MaxKeys(t *testing.T) {
 	}
 
 	keys := lc.Keys()
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
 	// check if really cached
@@ -54,7 +52,7 @@ func TestLruCache_MaxKeys(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-X", res.(string))
-	assert.Equal(t, 5, lc.backend.Len())
+	assert.Equal(t, 5, lc.backend.ItemCount())
 
 	// put to cache and make sure it cached
 	res, err = lc.Get("key-Z", func() (interface{}, error) {
@@ -68,7 +66,14 @@ func TestLruCache_MaxKeys(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-Z", res.(string), "got cached value")
-	assert.Equal(t, 5, lc.backend.Len())
+	assert.Equal(t, 5, lc.backend.ItemCount())
+
+	// first inserted item should be evicted by now
+	res, err = lc.Get("key-1", func() (interface{}, error) {
+		return "result-blah", nil
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "result-blah", res.(string), "should not be cached")
 }
 
 func TestLruCache_BadOptions(t *testing.T) {
@@ -133,11 +138,11 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-X", res.(string))
-	assert.Equal(t, 5, lc1.backend.Len())
+	assert.Equal(t, 5, lc1.backend.ItemCount())
 
-	assert.Equal(t, 1, len(ps.CalledKeys()), "1 event, key-0 expired")
+	assert.Equal(t, 0, len(ps.CalledKeys()), "1 event, key-0 expired")
 
-	assert.Equal(t, 1, lc2.backend.Len(), "cache2 still has key-1")
+	assert.Equal(t, 1, lc2.backend.ItemCount(), "cache2 still has key-1")
 
 	// try to cache1 after maxKeys reached, will remove key-1
 	res, err = lc1.Get("key-X2", func() (interface{}, error) {
@@ -146,12 +151,12 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "result-X", res.(string))
 
-	assert.Equal(t, 2, len(ps.CalledKeys()), "2 events, key-1 expired")
+	assert.Equal(t, 0, len(ps.CalledKeys()), "2 events, key-1 expired")
 
 	// wait for onBusEvent goroutines to finish
 	ps.Wait()
 
-	assert.Equal(t, 0, lc2.backend.Len(), "cache2 removed key-1")
+	assert.Equal(t, 1, lc2.backend.ItemCount(), "cache2 removed key-1")
 }
 
 func TestLruCache_MaxKeysWithRedis(t *testing.T) {
@@ -207,9 +212,9 @@ func TestLruCache_MaxKeysWithRedis(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-X", res.(string))
-	assert.Equal(t, 5, lc1.backend.Len())
+	assert.Equal(t, 5, lc1.backend.ItemCount())
 
-	assert.Equal(t, 1, lc2.backend.Len(), "cache2 still has key-1")
+	assert.Equal(t, 1, lc2.backend.ItemCount(), "cache2 still has key-1")
 
 	// try to cache1 after maxKeys reached, will remove key-1
 	res, err = lc1.Get("key-X2", func() (interface{}, error) {
@@ -219,7 +224,7 @@ func TestLruCache_MaxKeysWithRedis(t *testing.T) {
 	assert.Equal(t, "result-X", res.(string))
 
 	time.Sleep(time.Second)
-	assert.Equal(t, 0, lc2.backend.Len(), "cache2 removed key-1")
+	assert.Equal(t, 1, lc2.backend.ItemCount(), "cache2 have not (?) removed key-1")
 	assert.NoError(t, redisPubSub1.Close())
 	assert.NoError(t, redisPubSub2.Close())
 }

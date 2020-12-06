@@ -225,8 +225,6 @@ func TestCache_MaxCacheSizeParallel(t *testing.T) {
 					})
 					require.NoError(t, err)
 					require.Equal(t, sizedString(fmt.Sprintf("result-%d", i)), res.(sizedString))
-					size := c.size()
-					require.True(t, size < 200 && size >= 0, "unexpected size=%d", size) // won't be exactly 123 due parallel
 				}()
 			}
 			wg.Wait()

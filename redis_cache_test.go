@@ -1,6 +1,7 @@
 package lcw
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync/atomic"
@@ -8,7 +9,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/go-redis/redis/v7"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -102,7 +103,7 @@ func TestRedisCache(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-X", res.(string))
-	assert.Equal(t, int64(5), rc.backend.DBSize().Val())
+	assert.Equal(t, int64(5), rc.backend.DBSize(context.Background()).Val())
 
 	// put to cache and make sure it cached
 	res, err = rc.Get("key-Z", func() (interface{}, error) {

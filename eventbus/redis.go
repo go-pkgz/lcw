@@ -1,11 +1,12 @@
 package eventbus
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/go-redis/redis/v7"
+	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/go-multierror"
 )
 
@@ -13,7 +14,7 @@ import (
 // Returns an error in case of problems with creating PubSub client for specified channel.
 func NewRedisPubSub(addr, channel string) (*RedisPubSub, error) {
 	client := redis.NewClient(&redis.Options{Addr: addr})
-	pubSub := client.Subscribe(channel)
+	pubSub := client.Subscribe(context.Background(), channel)
 	// wait for subscription to be created and ignore the message
 	if _, err := pubSub.Receive(context.Background()); err != nil {
 		_ = client.Close()
@@ -41,7 +42,7 @@ func (m *RedisPubSub) Subscribe(fn func(fromID, key string)) error {
 				return
 			default:
 			}
-			msg, err := pubsub.ReceiveTimeout(time.Second * 10)
+			msg, err := pubsub.ReceiveTimeout(context.Background(), time.Second*10)
 			if err != nil {
 				continue
 			}
@@ -59,7 +60,7 @@ func (m *RedisPubSub) Subscribe(fn func(fromID, key string)) error {
 
 // Publish publishes provided message to channel provided on new RedisPubSub instance creation
 func (m *RedisPubSub) Publish(fromID, key string) error {
-	return m.client.Publish(m.channel, fromID+"$"+key).Err()
+	return m.client.Publish(context.Background(), m.channel, fromID+"$"+key).Err()
 }
 
 // Close cleans up running goroutines and closes Redis clients

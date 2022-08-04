@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v7"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -576,7 +576,7 @@ func ExampleLoadingCache_Delete() {
 
 // nolint:govet //false positive due to example name
 // ExampleLoadingCacheMutability illustrates changing mutable stored item outside of cache, works only for non-Redis cache.
-func ExampleLoadingCacheMutability() {
+func Example_loadingCacheMutability() {
 	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30)) // make expirable cache (30m TTL) with up to 10 keys
 	if err != nil {
 		panic("can' make cache")

@@ -3,7 +3,7 @@ package lcw
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -237,7 +237,7 @@ func ExampleScache() {
 		if err != nil {
 			return nil, err
 		}
-		b, err := ioutil.ReadAll(resp.Body)
+		b, err := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		if err != nil {
 			return nil, err

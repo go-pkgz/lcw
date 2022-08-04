@@ -2,7 +2,7 @@ package lcw
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -161,6 +161,7 @@ func TestLruCache_MaxKeysWithRedis(t *testing.T) {
 
 	var coldCalls int32
 
+	//nolint:gosec // not used for security	purpose
 	channel := "lcw-test-" + strconv.Itoa(rand.Intn(1000000))
 
 	redisPubSub1, err := eventbus.NewRedisPubSub("127.0.0.1:6379", channel)
@@ -241,7 +242,7 @@ func ExampleLruCache() {
 		if err != nil {
 			return "", err
 		}
-		b, err := ioutil.ReadAll(resp.Body)
+		b, err := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		if err != nil {
 			return "", err

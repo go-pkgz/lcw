@@ -1,7 +1,6 @@
 package lcw
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -44,7 +43,7 @@ func TestScache_Get(t *testing.T) {
 	time.Sleep(100 * time.Millisecond) // let postFn to do its thing
 
 	_, err = lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
-		return nil, errors.New("err")
+		return nil, fmt.Errorf("err")
 	})
 	assert.Error(t, err)
 }

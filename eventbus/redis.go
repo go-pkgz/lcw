@@ -1,12 +1,12 @@
 package eventbus
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v7"
 	"github.com/hashicorp/go-multierror"
-	"github.com/pkg/errors"
 )
 
 // NewRedisPubSub creates new RedisPubSub with given parameters.
@@ -15,9 +15,9 @@ func NewRedisPubSub(addr, channel string) (*RedisPubSub, error) {
 	client := redis.NewClient(&redis.Options{Addr: addr})
 	pubSub := client.Subscribe(channel)
 	// wait for subscription to be created and ignore the message
-	if _, err := pubSub.Receive(); err != nil {
+	if _, err := pubSub.Receive(context.Background()); err != nil {
 		_ = client.Close()
-		return nil, errors.Wrapf(err, "problem subscribing to channel %s on address %s", channel, addr)
+		return nil, fmt.Errorf("problem subscribing to channel %s on address %s: %w", channel, addr, err)
 	}
 	return &RedisPubSub{client: client, pubSub: pubSub, channel: channel, done: make(chan struct{})}, nil
 }
@@ -66,7 +66,11 @@ func (m *RedisPubSub) Publish(fromID, key string) error {
 func (m *RedisPubSub) Close() error {
 	close(m.done)
 	errs := new(multierror.Error)
-	errs = multierror.Append(errs, errors.Wrap(m.pubSub.Close(), "problem closing pubSub client"))
-	errs = multierror.Append(errs, errors.Wrap(m.client.Close(), "problem closing redis client"))
+	if err := m.pubSub.Close(); err != nil {
+		errs = multierror.Append(errs, fmt.Errorf("problem closing pubSub client: %w", err))
+	}
+	if err := m.client.Close(); err != nil {
+		errs = multierror.Append(errs, fmt.Errorf("problem closing redis client: %w", err))
+	}
 	return errs.ErrorOrNil()
 }

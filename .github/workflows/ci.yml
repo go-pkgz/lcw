@@ -11,17 +11,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: set up go 1.14
-        uses: actions/setup-go@v1
+      - name: set up go 1.18
+        uses: actions/setup-go@v3
         with:
-          go-version: 1.14
+          go-version: 1.18
         id: go
 
       - name: checkout
         uses: actions/checkout@v2
 
       - name: start Redis
-        uses: supercharge/redis-github-action@1.1.0
+        uses: supercharge/redis-github-action@1.4.0
 
       - name: build and test
         run: |
@@ -30,14 +30,13 @@ jobs:
           cat $GITHUB_WORKSPACE/profile.cov_tmp | grep -v "_mock.go" > $GITHUB_WORKSPACE/profile.cov
           go build -race
         env:
-          GO111MODULE: "on"
           TZ: "America/Chicago"
           ENABLE_REDIS_TESTS: "true"
 
       - name: install golangci-lint and goveralls
         run: |
-          curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $GITHUB_WORKSPACE v1.26.0
-          GO111MODULE=off go get -u -v github.com/mattn/goveralls
+          curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $GITHUB_WORKSPACE v1.47.2
+          go get -u github.com/mattn/goveralls
 
       - name: run linters
         run: $GITHUB_WORKSPACE/golangci-lint run --out-format=github-actions

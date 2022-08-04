@@ -218,6 +218,7 @@ func TestCache_MaxCacheSizeParallel(t *testing.T) {
 				wg.Add(1)
 				i := i
 				go func() {
+					//nolint:gosec // not used for security	purpose
 					time.Sleep(time.Duration(rand.Intn(100)) * time.Nanosecond)
 					defer wg.Done()
 					res, err := c.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {

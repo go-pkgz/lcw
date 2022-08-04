@@ -22,6 +22,7 @@ func TestRedisPubSub(t *testing.T) {
 		t.Skip("ENABLE_REDIS_TESTS env variable is not set, not expecting Redis to be ready at 127.0.0.1:6379")
 	}
 
+	//nolint:gosec // not used for security	purpose
 	channel := "lcw-test-" + strconv.Itoa(rand.Intn(1000000))
 	redisPubSub, err := NewRedisPubSub("127.0.0.1:6379", channel)
 	require.NoError(t, err)

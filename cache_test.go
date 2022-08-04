@@ -1,7 +1,6 @@
 package lcw
 
 import (
-	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -84,14 +83,14 @@ func TestCache_Get(t *testing.T) {
 
 			_, err = c.Get("key-2", func() (interface{}, error) {
 				atomic.AddInt32(&coldCalls, 1)
-				return "result2", errors.New("some error")
+				return "result2", fmt.Errorf("some error")
 			})
 			assert.Error(t, err)
 			assert.Equal(t, int32(2), atomic.LoadInt32(&coldCalls), "cache hit")
 
 			_, err = c.Get("key-2", func() (interface{}, error) {
 				atomic.AddInt32(&coldCalls, 1)
-				return "result2", errors.New("some error")
+				return "result2", fmt.Errorf("some error")
 			})
 			assert.Error(t, err)
 			assert.Equal(t, int32(3), atomic.LoadInt32(&coldCalls), "cache hit")
@@ -512,7 +511,7 @@ func TestCache_Stats(t *testing.T) {
 			}
 
 			_, err = c.Get("key-9999", func() (interface{}, error) {
-				return nil, errors.New("err")
+				return nil, fmt.Errorf("err")
 			})
 			require.Error(t, err)
 			switch c.(type) {

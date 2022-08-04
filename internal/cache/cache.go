@@ -4,11 +4,10 @@
 package cache
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/pkg/errors"
 )
 
 // LoadingCache provides expirable loading cache with LRC eviction.
@@ -39,7 +38,7 @@ func NewLoadingCache(options ...Option) (*LoadingCache, error) {
 
 	for _, opt := range options {
 		if err := opt(&res); err != nil {
-			return nil, errors.Wrap(err, "failed to set cache option")
+			return nil, fmt.Errorf("failed to set cache option: %w", err)
 		}
 	}
 

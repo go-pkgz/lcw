@@ -1,11 +1,11 @@
 package lcw
 
 import (
+	"fmt"
 	"sync/atomic"
 	"time"
 
 	"github.com/go-redis/redis/v7"
-	"github.com/pkg/errors"
 )
 
 // RedisValueSizeLimit is maximum allowed value size in Redis
@@ -27,7 +27,7 @@ func NewRedisCache(backend *redis.Client, opts ...Option) (*RedisCache, error) {
 	}
 	for _, opt := range opts {
 		if err := opt(&res.options); err != nil {
-			return nil, errors.Wrap(err, "failed to set cache option")
+			return nil, fmt.Errorf("failed to set cache option: %w", err)
 		}
 	}
 

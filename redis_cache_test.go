@@ -1,7 +1,6 @@
 package lcw
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 	"sync/atomic"
@@ -142,7 +141,7 @@ func TestRedisCacheErrors(t *testing.T) {
 	defer rc.Close()
 
 	res, err := rc.Get("error-key-Z", func() (interface{}, error) {
-		return "error-result-Z", errors.New("some error")
+		return "error-result-Z", fmt.Errorf("some error")
 	})
 	assert.Error(t, err)
 	assert.Equal(t, "error-result-Z", res.(string))

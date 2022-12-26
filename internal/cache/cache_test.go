@@ -12,6 +12,7 @@ import (
 func TestLoadingCacheNoPurge(t *testing.T) {
 	lc, err := NewLoadingCache()
 	assert.NoError(t, err)
+	defer lc.Close()
 
 	lc.Set("key1", "val1")
 	assert.Equal(t, 1, lc.ItemCount())
@@ -112,6 +113,7 @@ func TestLoadingCacheWithPurgeMax(t *testing.T) {
 func TestLoadingCacheConcurrency(t *testing.T) {
 	lc, err := NewLoadingCache()
 	assert.NoError(t, err)
+	defer lc.Close()
 	wg := sync.WaitGroup{}
 	wg.Add(1000)
 	for i := 0; i < 1000; i++ {
@@ -128,6 +130,7 @@ func TestLoadingCacheInvalidateAndEvict(t *testing.T) {
 	var evicted int
 	lc, err := NewLoadingCache(OnEvicted(func(_ string, _ interface{}) { evicted++ }))
 	assert.NoError(t, err)
+	defer lc.Close()
 
 	lc.Set("key1", "val1")
 	lc.Set("key2", "val2")
@@ -167,6 +170,7 @@ func TestLoadingCacheBadOption(t *testing.T) {
 func TestLoadingExpired(t *testing.T) {
 	lc, err := NewLoadingCache(TTL(time.Millisecond * 5))
 	assert.NoError(t, err)
+	defer lc.Close()
 
 	lc.Set("key1", "val1")
 	assert.Equal(t, 1, lc.ItemCount())
@@ -189,4 +193,11 @@ func TestLoadingExpired(t *testing.T) {
 	v, ok = lc.Get("key1")
 	assert.Empty(t, v)
 	assert.False(t, ok)
+}
+
+func TestDoubleClose(t *testing.T) {
+	lc, err := NewLoadingCache(TTL(time.Millisecond * 5))
+	assert.NoError(t, err)
+	lc.Close()
+	lc.Close() // don't panic in case service is already closed
 }

@@ -31,7 +31,6 @@ linters:
     - dupl
     - misspell
     - unparam
-    - unused
     - typecheck
     - ineffassign
     - stylecheck

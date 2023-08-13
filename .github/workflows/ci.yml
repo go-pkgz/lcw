@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: set up go 1.18
-        uses: actions/setup-go@v3
+      - name: set up go
+        uses: actions/setup-go@v4
         with:
-          go-version: 1.18
+          go-version: "1.20"
         id: go
 
       - name: checkout
@@ -33,15 +33,15 @@ jobs:
           TZ: "America/Chicago"
           ENABLE_REDIS_TESTS: "true"
 
-      - name: install golangci-lint and goveralls
-        run: |
-          curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $GITHUB_WORKSPACE v1.50.1
-          go install github.com/mattn/goveralls@latest
 
-      - name: run linters
-        run: $GITHUB_WORKSPACE/golangci-lint run --out-format=github-actions
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
 
       - name: submit coverage
-        run: goveralls -service="github" -coverprofile=$GITHUB_WORKSPACE/profile.cov
+        run: |
+          go install github.com/mattn/goveralls@latest
+          goveralls -service="github" -coverprofile=$GITHUB_WORKSPACE/profile.cov
         env:
           COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -33,11 +33,28 @@ jobs:
           TZ: "America/Chicago"
           ENABLE_REDIS_TESTS: "true"
 
+      - name: build and test for v2
+        run: |
+          go get -v
+          go test -timeout=60s -race -covermode=atomic -coverprofile=$GITHUB_WORKSPACE/profile.cov_tmp
+          # combine the coverage files
+          cat $GITHUB_WORKSPACE/profile.cov_tmp | grep -v "_mock.go" | grep -v "mode:" >> $GITHUB_WORKSPACE/profile.cov
+          go build -race
+        env:
+          TZ: "America/Chicago"
+          ENABLE_REDIS_TESTS: "true"
+        working-directory: v2
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v4
         with:
           version: latest
+
+      - name: golangci-lint for v2
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: v2
 
       - name: submit coverage
         run: |

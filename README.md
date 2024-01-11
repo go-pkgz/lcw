@@ -1,4 +1,4 @@
-# Loading Cache Wrapper [![Build Status](https://github.com/go-pkgz/lcw/workflows/build/badge.svg)](https://github.com/go-pkgz/lcw/actions) [![Coverage Status](https://coveralls.io/repos/github/go-pkgz/lcw/badge.svg?branch=master)](https://coveralls.io/github/go-pkgz/lcw?branch=master) [![godoc](https://godoc.org/github.com/go-pkgz/lcw?status.svg)](https://godoc.org/github.com/go-pkgz/lcw)
+# Loading Cache Wrapper [![Build Status](https://github.com/go-pkgz/lcw/workflows/build/badge.svg)](https://github.com/go-pkgz/lcw/actions) [![Coverage Status](https://coveralls.io/repos/github/go-pkgz/lcw/badge.svg?branch=master)](https://coveralls.io/github/go-pkgz/lcw?branch=master) [![godoc](https://godoc.org/github.com/go-pkgz/lcw?status.svg)](https://godoc.org/github.com/go-pkgz/lcw/v2)
 
 The library adds a thin layer on top of [lru cache](https://github.com/hashicorp/golang-lru) and internal implementation
 of expirable cache.
@@ -25,7 +25,7 @@ Main features:
 
 ## Install and update
 
-`go get -u github.com/go-pkgz/lcw`
+`go get -u github.com/go-pkgz/lcw/v2`
 
 ## Usage
 
@@ -33,18 +33,19 @@ Main features:
 package main
 
 import (
-	"github.com/go-pkgz/lcw"
+	"github.com/go-pkgz/lcw/v2"
 )
 
 func main() {
-	cache, err := lcw.NewLruCache(lcw.MaxKeys(500), lcw.MaxCacheSize(65536), lcw.MaxValSize(200), lcw.MaxKeySize(32))
+	o := lcw.NewOpts[int]()
+	cache, err := lcw.NewLruCache(o.MaxKeys(500), o.MaxCacheSize(65536), o.MaxValSize(200), o.MaxKeySize(32))
 	if err != nil {
 		panic("failed to create cache")
 	}
 	defer cache.Close()
 
-	val, err := cache.Get("key123", func() (interface{}, error) {
-		res, err := getDataFromSomeSource(params) // returns string
+	val, err := cache.Get("key123", func() (int, error) {
+		res, err := getDataFromSomeSource(params) // returns int
 		return res, err
 	})
 
@@ -52,7 +53,7 @@ func main() {
 		panic("failed to get data")
 	}
 
-	s := val.(string) // cached value
+	s := val // cached value
 }
 ```
 

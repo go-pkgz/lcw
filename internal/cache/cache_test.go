@@ -160,7 +160,7 @@ func TestLoadingCacheInvalidateAndEvict(t *testing.T) {
 }
 
 func TestLoadingCacheBadOption(t *testing.T) {
-	lc, err := NewLoadingCache(func(lc *LoadingCache) error {
+	lc, err := NewLoadingCache(func(_ *LoadingCache) error {
 		return fmt.Errorf("mock err")
 	})
 	assert.EqualError(t, err, "failed to set cache option: mock err")

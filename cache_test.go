@@ -555,7 +555,7 @@ func ExampleLoadingCache_Get() {
 // ExampleLoadingCache_Delete illustrates cache value eviction and OnEvicted function usage.
 func ExampleLoadingCache_Delete() {
 	// make expirable cache (30m TTL) with up to 10 keys. Set callback on eviction event
-	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30), OnEvicted(func(key string, value interface{}) {
+	c, err := NewExpirableCache(MaxKeys(10), TTL(time.Minute*30), OnEvicted(func(key string, _ interface{}) {
 		fmt.Println("key " + key + " evicted")
 	}))
 	if err != nil {

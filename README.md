@@ -1,7 +1,6 @@
 # Loading Cache Wrapper [![Build Status](https://github.com/go-pkgz/lcw/workflows/build/badge.svg)](https://github.com/go-pkgz/lcw/actions) [![Coverage Status](https://coveralls.io/repos/github/go-pkgz/lcw/badge.svg?branch=master)](https://coveralls.io/github/go-pkgz/lcw?branch=master) [![godoc](https://godoc.org/github.com/go-pkgz/lcw?status.svg)](https://godoc.org/github.com/go-pkgz/lcw/v2)
 
-The library adds a thin layer on top of [lru cache](https://github.com/hashicorp/golang-lru) and internal implementation
-of expirable cache.
+The library adds a thin layer on top of [lru\expirable cache](https://github.com/hashicorp/golang-lru).
 
 | Cache name     | Constructor           | Defaults          | Description             |
 |----------------|-----------------------|-------------------|-------------------------|

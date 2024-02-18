@@ -40,7 +40,6 @@ func TestExpirableCache(t *testing.T) {
 
 	// let key-0 expire, GitHub Actions friendly way
 	for lc.Stat().Keys > 4 {
-		lc.backend.DeleteExpired() // enforce DeleteExpired for GitHub earlier than o.TTL/2
 		time.Sleep(time.Millisecond * 10)
 	}
 	assert.Equal(t, 4, lc.Stat().Keys)
@@ -153,11 +152,10 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	assert.Equal(t, 1, lc2.Stat().Keys)
 	assert.Equal(t, int64(1), lc2.Stat().Misses, lc2.Stat())
 
-	// let key-0 expire, GitHub Actions friendly way
+	// let key-0 expire
 	for lc1.Stat().Keys > 4 {
-		lc1.backend.DeleteExpired() // enforce DeleteExpired for GitHub earlier than TTL/2
-		ps.Wait()                   // wait for onBusEvent goroutines to finish
-		time.Sleep(time.Millisecond * 10)
+		ps.Wait() // wait for onBusEvent goroutines to finish
+		time.Sleep(time.Millisecond * 5)
 	}
 	assert.Equal(t, 4, lc1.Stat().Keys)
 	assert.Equal(t, 1, lc2.Stat().Keys, "key-1 still in cache2")

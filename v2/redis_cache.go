@@ -86,7 +86,7 @@ func (c *RedisCache[V]) Get(key string, fn func() (V, error)) (data V, err error
 		case string:
 			return any(v).(V), getErr
 		default:
-			return any(v).(V), getErr
+			return c.strToV(v), getErr
 		}
 	}
 	atomic.AddInt64(&c.Misses, 1)

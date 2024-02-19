@@ -6,9 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"github.com/hashicorp/go-multierror"
+	"github.com/redis/go-redis/v9"
 )
 
 // NewRedisPubSub creates new RedisPubSub with given parameters.

@@ -5,11 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
-)
-
-import (
 	"github.com/go-pkgz/lcw/v2/eventbus"
+	"github.com/google/uuid"
 	"github.com/hashicorp/golang-lru/v2/expirable"
 )
 

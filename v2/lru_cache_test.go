@@ -14,9 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-pkgz/lcw/v2/eventbus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-pkgz/lcw/v2/eventbus"
 )
 
 func TestLruCache_MaxKeys(t *testing.T) {

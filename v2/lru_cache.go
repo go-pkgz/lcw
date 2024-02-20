@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/go-pkgz/lcw/v2/eventbus"
 	"github.com/google/uuid"
 	lru "github.com/hashicorp/golang-lru/v2"
+
+	"github.com/go-pkgz/lcw/v2/eventbus"
 )
 
 // LruCache wraps lru.LruCache with loading cache Get and size limits

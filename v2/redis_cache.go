@@ -18,12 +18,12 @@ const RedisValueSizeLimit = 512 * 1024 * 1024
 type RedisCache[V any] struct {
 	Workers[V]
 	CacheStat
-	backend *redis.Client
+	backend redis.UniversalClient
 }
 
 // NewRedisCache makes Redis LoadingCache implementation.
 // Supports only string and string-based types and will return error otherwise.
-func NewRedisCache[V any](backend *redis.Client, opts ...Option[V]) (*RedisCache[V], error) {
+func NewRedisCache[V any](backend redis.UniversalClient, opts ...Option[V]) (*RedisCache[V], error) {
 	// check if V is string, not underlying type but directly, and otherwise return error if strToV is nil as it should be defined
 
 	res := RedisCache[V]{

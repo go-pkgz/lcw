@@ -17,11 +17,11 @@ const RedisValueSizeLimit = 512 * 1024 * 1024
 type RedisCache struct {
 	options
 	CacheStat
-	backend *redis.Client
+	backend redis.UniversalClient
 }
 
 // NewRedisCache makes Redis LoadingCache implementation.
-func NewRedisCache(backend *redis.Client, opts ...Option) (*RedisCache, error) {
+func NewRedisCache(backend redis.UniversalClient, opts ...Option) (*RedisCache, error) {
 	res := RedisCache{
 		options: options{
 			ttl: 5 * time.Minute,

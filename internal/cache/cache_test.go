@@ -2,6 +2,7 @@ package cache
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -200,4 +201,36 @@ func TestDoubleClose(t *testing.T) {
 	assert.NoError(t, err)
 	lc.Close()
 	lc.Close() // don't panic in case service is already closed
+}
+
+func TestBucketsLeak(t *testing.T) {
+	const n = 1_000_000
+
+	gcAndGetAllocKb := func() int {
+		stats := runtime.MemStats{}
+		runtime.GC()
+		runtime.ReadMemStats(&stats)
+		return int(stats.Alloc / 1024)
+	}
+
+	lc, err := NewLoadingCache()
+	assert.NoError(t, err)
+	allocKB := gcAndGetAllocKb()
+	t.Logf("allocated before start: %dKB\n", allocKB)
+	assert.Less(t, allocKB, 1024, "alloc should be less than 1024KB before we start")
+
+	for i := 0; i < n; i++ {
+		lc.Set(fmt.Sprintf("key-%d", i), fmt.Sprintf("val-%d", i))
+	}
+	allocKB = gcAndGetAllocKb()
+	t.Logf("alloc after storing %d entries: %dKB\n", n, allocKB)
+	assert.Greater(t, allocKB, 1024, "alloc should be more than 1024KB when we have a lot of entries")
+
+	lc.Purge()
+	allocKB = gcAndGetAllocKb()
+	t.Logf("allocated after the Purge call: %dKB\n", allocKB)
+	assert.Less(t, allocKB, 1024, "alloc should be less than 1024KB before after the Purge call")
+
+	// Prevents optimization
+	runtime.KeepAlive(lc)
 }

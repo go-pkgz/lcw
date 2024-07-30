@@ -22,48 +22,48 @@ type Option func(o *options) error
 
 // MaxValSize functional option defines the largest value's size allowed to be cached
 // By default it is 0, which means unlimited.
-func MaxValSize(max int) Option {
+func MaxValSize(maximum int) Option {
 	return func(o *options) error {
-		if max < 0 {
+		if maximum < 0 {
 			return fmt.Errorf("negative max value size")
 		}
-		o.maxValueSize = max
+		o.maxValueSize = maximum
 		return nil
 	}
 }
 
 // MaxKeySize functional option defines the largest key's size allowed to be used in cache
 // By default it is 0, which means unlimited.
-func MaxKeySize(max int) Option {
+func MaxKeySize(maximum int) Option {
 	return func(o *options) error {
-		if max < 0 {
+		if maximum < 0 {
 			return fmt.Errorf("negative max key size")
 		}
-		o.maxKeySize = max
+		o.maxKeySize = maximum
 		return nil
 	}
 }
 
 // MaxKeys functional option defines how many keys to keep.
 // By default it is 0, which means unlimited.
-func MaxKeys(max int) Option {
+func MaxKeys(maximum int) Option {
 	return func(o *options) error {
-		if max < 0 {
+		if maximum < 0 {
 			return fmt.Errorf("negative max keys")
 		}
-		o.maxKeys = max
+		o.maxKeys = maximum
 		return nil
 	}
 }
 
 // MaxCacheSize functional option defines the total size of cached data.
 // By default it is 0, which means unlimited.
-func MaxCacheSize(max int64) Option {
+func MaxCacheSize(maximum int64) Option {
 	return func(o *options) error {
-		if max < 0 {
+		if maximum < 0 {
 			return fmt.Errorf("negative max cache size")
 		}
-		o.maxCacheSize = max
+		o.maxCacheSize = maximum
 		return nil
 	}
 }

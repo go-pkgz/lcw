@@ -31,48 +31,48 @@ func NewOpts[T any]() *WorkerOptions[T] {
 
 // MaxValSize functional option defines the largest value's size allowed to be cached
 // By default it is 0, which means unlimited.
-func (o *WorkerOptions[V]) MaxValSize(max int) Option[V] {
+func (o *WorkerOptions[V]) MaxValSize(maximum int) Option[V] {
 	return func(o *Workers[V]) error {
-		if max < 0 {
+		if maximum < 0 {
 			return fmt.Errorf("negative max value size")
 		}
-		o.maxValueSize = max
+		o.maxValueSize = maximum
 		return nil
 	}
 }
 
 // MaxKeySize functional option defines the largest key's size allowed to be used in cache
 // By default it is 0, which means unlimited.
-func (o *WorkerOptions[V]) MaxKeySize(max int) Option[V] {
+func (o *WorkerOptions[V]) MaxKeySize(maximum int) Option[V] {
 	return func(o *Workers[V]) error {
-		if max < 0 {
+		if maximum < 0 {
 			return fmt.Errorf("negative max key size")
 		}
-		o.maxKeySize = max
+		o.maxKeySize = maximum
 		return nil
 	}
 }
 
 // MaxKeys functional option defines how many keys to keep.
 // By default, it is 0, which means unlimited.
-func (o *WorkerOptions[V]) MaxKeys(max int) Option[V] {
+func (o *WorkerOptions[V]) MaxKeys(maximum int) Option[V] {
 	return func(o *Workers[V]) error {
-		if max < 0 {
+		if maximum < 0 {
 			return fmt.Errorf("negative max keys")
 		}
-		o.maxKeys = max
+		o.maxKeys = maximum
 		return nil
 	}
 }
 
 // MaxCacheSize functional option defines the total size of cached data.
 // By default, it is 0, which means unlimited.
-func (o *WorkerOptions[V]) MaxCacheSize(max int64) Option[V] {
+func (o *WorkerOptions[V]) MaxCacheSize(maximum int64) Option[V] {
 	return func(o *Workers[V]) error {
-		if max < 0 {
+		if maximum < 0 {
 			return fmt.Errorf("negative max cache size")
 		}
-		o.maxCacheSize = max
+		o.maxCacheSize = maximum
 		return nil
 	}
 }

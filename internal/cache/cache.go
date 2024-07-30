@@ -158,7 +158,12 @@ func (c *LoadingCache) getValue(key string) (interface{}, bool) {
 func (c *LoadingCache) Purge() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for k, v := range c.data {
+
+	// to release the memory, as otherwise old map would store same amount of entries to prevent reallocations
+	oldData := c.data
+	c.data = make(map[string]*cacheItem)
+
+	for k, v := range oldData {
 		delete(c.data, k)
 		if c.onEvicted != nil {
 			c.onEvicted(k, v.data)
@@ -206,19 +211,25 @@ type keysWithTS []struct {
 func (c *LoadingCache) purge(maxKeys int64) {
 	kts := keysWithTS{}
 
-	for key, value := range c.data {
+	// to release the memory, as otherwise old map would store same amount of entries to prevent reallocations
+	oldData := c.data
+	c.data = make(map[string]*cacheItem)
+
+	for key, value := range oldData {
 		// ttl eviction
-		if time.Now().After(c.data[key].expiresAt) {
-			delete(c.data, key)
+		if time.Now().After(value.expiresAt) {
 			if c.onEvicted != nil {
 				c.onEvicted(key, value.data)
 			}
+			continue
 		}
+
+		// move non-expired items to new map
+		c.data[key] = value
 
 		// prepare list of keysWithTS for size eviction
 		if maxKeys > 0 && int64(len(c.data)) > maxKeys {
-			ts := c.data[key].expiresAt
-
+			ts := value.expiresAt
 			kts = append(kts, struct {
 				key string
 				ts  time.Time

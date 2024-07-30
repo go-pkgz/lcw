@@ -25,9 +25,9 @@ func PurgeEvery(interval time.Duration) Option {
 // MaxKeys functional option defines how many keys to keep.
 // By default it is 0, which means unlimited.
 // If any non-zero MaxKeys set, default PurgeEvery will be set to 5 minutes
-func MaxKeys(max int) Option {
+func MaxKeys(maximum int) Option {
 	return func(lc *LoadingCache) error {
-		lc.maxKeys = int64(max)
+		lc.maxKeys = int64(maximum)
 		return nil
 	}
 }

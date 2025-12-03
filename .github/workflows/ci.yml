@@ -11,14 +11,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
       - name: set up go
         uses: actions/setup-go@v5
         with:
           go-version: "1.21"
         id: go
-
-      - name: checkout
-        uses: actions/checkout@v4
 
       - name: start Redis
         uses: supercharge/redis-github-action@1.8.0
@@ -46,14 +46,14 @@ jobs:
         working-directory: v2
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.6
 
       - name: golangci-lint for v2
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.6
           working-directory: v2
 
       - name: submit coverage

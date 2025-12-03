@@ -7,6 +7,7 @@ import (
 	"github.com/go-pkgz/lcw/v2/eventbus"
 )
 
+// Workers holds cache configuration options
 type Workers[V any] struct {
 	maxKeys      int
 	maxValueSize int

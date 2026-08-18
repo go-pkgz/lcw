@@ -2,6 +2,7 @@ package lcw
 
 import (
 	"fmt"
+	"math"
 	"sync/atomic"
 
 	"github.com/go-pkgz/lcw/eventbus"
@@ -16,6 +17,7 @@ type LruCache struct {
 	backend     *lru.Cache
 	currentSize int64
 	id          string // uuid identifying cache instance
+	loads       loadGroup
 }
 
 // NewLruCache makes LRU LoadingCache implementation, 1000 max keys by default
@@ -47,8 +49,7 @@ func (c *LruCache) init() error {
 		if c.onEvicted != nil {
 			c.onEvicted(key.(string), value)
 		}
-		if s, ok := value.(Sizer); ok {
-			size := s.Size()
+		if size, ok := sizeOf(value); ok {
 			atomic.AddInt64(&c.currentSize, -1*int64(size))
 		}
 		_ = c.eventBus.Publish(c.id, key.(string)) // signal invalidation to other nodes
@@ -56,7 +57,11 @@ func (c *LruCache) init() error {
 
 	var err error
 	// OnEvicted called automatically for expired and manually deleted
-	if c.backend, err = lru.NewWithEvict(c.maxKeys, onEvicted); err != nil {
+	maxKeys := c.maxKeys
+	if maxKeys <= 0 { // 0 means unlimited, lru backend requires a positive size
+		maxKeys = math.MaxInt
+	}
+	if c.backend, err = lru.NewWithEvict(maxKeys, onEvicted); err != nil {
 		return fmt.Errorf("failed to make lru cache backend: %w", err)
 	}
 
@@ -70,29 +75,39 @@ func (c *LruCache) Get(key string, fn func() (any, error)) (data any, err error)
 		return v, nil
 	}
 
-	if data, err = fn(); err != nil {
-		atomic.AddInt64(&c.Errors, 1)
-		return data, err
-	}
+	// concurrent callers for the same key wait for the first load instead of loading on their own,
+	// otherwise each of them would add the value and count its size again
+	return c.loads.do(key, func() (any, error) {
+		if v, ok := c.backend.Get(key); ok { // filled by the load we were waiting for
+			atomic.AddInt64(&c.Hits, 1)
+			return v, nil
+		}
 
-	atomic.AddInt64(&c.Misses, 1)
+		data, err := fn()
+		if err != nil {
+			atomic.AddInt64(&c.Errors, 1)
+			return data, err
+		}
 
-	if !c.allowed(key, data) {
-		return data, nil
-	}
+		atomic.AddInt64(&c.Misses, 1)
 
-	c.backend.Add(key, data)
+		if !c.allowed(key, data) {
+			return data, nil
+		}
 
-	if s, ok := data.(Sizer); ok {
-		atomic.AddInt64(&c.currentSize, int64(s.Size()))
-		if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize) > c.maxCacheSize {
-			for atomic.LoadInt64(&c.currentSize) > c.maxCacheSize {
-				c.backend.RemoveOldest()
+		c.backend.Add(key, data)
+
+		if size, ok := sizeOf(data); ok {
+			atomic.AddInt64(&c.currentSize, int64(size))
+			for c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize) > c.maxCacheSize {
+				if _, _, ok := c.backend.RemoveOldest(); !ok { // nothing left to evict
+					break
+				}
 			}
 		}
-	}
 
-	return data, nil
+		return data, nil
+	})
 }
 
 // Peek returns the key value (or undefined if not found) without updating the "recently used"-ness of the key.
@@ -165,8 +180,8 @@ func (c *LruCache) allowed(key string, data any) bool {
 	if c.maxKeySize > 0 && len(key) > c.maxKeySize {
 		return false
 	}
-	if s, ok := data.(Sizer); ok {
-		if c.maxValueSize > 0 && s.Size() >= c.maxValueSize {
+	if size, ok := sizeOf(data); ok {
+		if c.maxValueSize > 0 && size >= c.maxValueSize {
 			return false
 		}
 	}

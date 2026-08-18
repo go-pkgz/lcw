@@ -140,7 +140,7 @@ func TestCache_MaxValueSize(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, sizedString("result-big"), res.(sizedString), "got not cached value")
 
-			// put too big value to cache but not Sizer
+			// put too big plain string to cache, sized by length even without Sizer
 			res, err = c.Get("key-Big2", func() (any, error) {
 				return "1234567890", nil
 			})
@@ -151,7 +151,7 @@ func TestCache_MaxValueSize(t *testing.T) {
 				return "xyz", nil
 			})
 			assert.NoError(t, err)
-			assert.Equal(t, "1234567890", res.(string), "too long, but not Sizer. from cache")
+			assert.Equal(t, "xyz", res.(string), "too long string, not cached")
 		})
 	}
 }
@@ -549,7 +549,7 @@ func ExampleLoadingCache_Get() {
 	}
 	fmt.Printf("got %s from cache, stats: %s", v.(string), c.Stat())
 	// Output: cache miss 1
-	// got myval-1 from cache, stats: {hits:1, misses:1, ratio:0.50, keys:1, size:0, errors:0}
+	// got myval-1 from cache, stats: {hits:1, misses:1, ratio:0.50, keys:1, size:7, errors:0}
 }
 
 // ExampleLoadingCache_Delete illustrates cache value eviction and OnEvicted function usage.
@@ -689,4 +689,113 @@ func (m *mockPubSub) Publish(fromID, key string) error {
 		}()
 	}
 	return nil
+}
+
+func TestCache_ConcurrentSameKeyLoad(t *testing.T) {
+	caches, teardown := cachesTestList(t, MaxKeys(50), MaxCacheSize(1000))
+	defer teardown()
+
+	for _, c := range caches {
+		c := c
+		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
+			var coldCalls int32
+			var wg sync.WaitGroup
+			start := make(chan struct{})
+
+			for i := 0; i < 10; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					<-start
+					res, err := c.Get("key", func() (any, error) {
+						atomic.AddInt32(&coldCalls, 1)
+						time.Sleep(10 * time.Millisecond) // make the overlap wide enough
+						return sizedString("result"), nil
+					})
+					assert.NoError(t, err)
+					if s, ok := res.(string); ok {
+						res = sizedString(s)
+					}
+					assert.Equal(t, sizedString("result"), res)
+				}()
+			}
+			close(start)
+			wg.Wait()
+
+			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls), "loaded once for all callers")
+			assert.Equal(t, 1, c.Stat().Keys)
+			assert.Equal(t, int64(1), c.Stat().Misses, "one miss counted")
+		})
+	}
+}
+
+func TestCache_ConcurrentSameKeySizeAccounting(t *testing.T) {
+	// concurrent cold loads used to add the value size once per caller, overflowing maxCacheSize
+	// and leaving the lru eviction loop spinning over an empty cache
+	lc, err := NewLruCache(MaxKeys(50), MaxCacheSize(10))
+	require.NoError(t, err)
+	defer lc.Close()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var wg sync.WaitGroup
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, e := lc.Get("key", func() (any, error) {
+					time.Sleep(10 * time.Millisecond)
+					return sizedString("123456"), nil
+				})
+				assert.NoError(t, e)
+			}()
+		}
+		wg.Wait()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "concurrent loads hang, size accounting overflowed")
+	}
+
+	assert.Equal(t, int64(6), lc.Stat().Size, "size counted once")
+	assert.Equal(t, 1, lc.Stat().Keys)
+}
+
+func TestCache_MaxKeysZeroUnlimited(t *testing.T) {
+	// MaxKeys(0) is documented as unlimited, it used to reject every insert in the expirable cache
+	// and fail the lru cache construction
+	ec, err := NewExpirableCache(MaxKeys(0))
+	require.NoError(t, err)
+	defer ec.Close()
+
+	lc, err := NewLruCache(MaxKeys(0))
+	require.NoError(t, err)
+	defer lc.Close()
+
+	for _, c := range []countedCache{ec, lc} {
+		c := c
+		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
+			var coldCalls int32
+			for i := 0; i < 2; i++ {
+				_, err := c.Get("key", func() (any, error) {
+					atomic.AddInt32(&coldCalls, 1)
+					return "value", nil
+				})
+				require.NoError(t, err)
+			}
+			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls), "second get from cache")
+			assert.Equal(t, 1, c.Stat().Keys)
+
+			for i := 0; i < 100; i++ {
+				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (any, error) {
+					return "value", nil
+				})
+				require.NoError(t, err)
+			}
+			assert.Equal(t, 101, c.Stat().Keys, "no limit applied")
+		})
+	}
 }

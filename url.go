@@ -12,7 +12,7 @@ import (
 
 // New parses uri and makes any of supported caches
 // supported URIs:
-//   - redis://<ip>:<port>?db=123&max_keys=10
+//   - redis://<ip>:<port>?db=123&max_keys=10&redis_key_prefix=lcw:
 //   - mem://lru?max_keys=10&max_cache_size=1024
 //   - mem://expirable?ttl=30s&max_val_size=100
 //   - nop://
@@ -100,6 +100,10 @@ func optionsFromQuery(q url.Values) (opts []Option, err error) {
 		} else {
 			opts = append(opts, TTL(vv))
 		}
+	}
+
+	if v := q.Get("redis_key_prefix"); v != "" {
+		opts = append(opts, RedisKeyPrefix(v))
 	}
 
 	return opts, errors.Join(errs...)

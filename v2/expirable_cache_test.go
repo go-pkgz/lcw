@@ -39,13 +39,11 @@ func TestExpirableCache(t *testing.T) {
 	assert.Equal(t, int64(6), lc.Stat().Misses)
 
 	// let key-0 expire, GitHub Actions friendly way
-	for lc.Stat().Keys > 4 {
-		time.Sleep(time.Millisecond * 10)
-	}
-	assert.Equal(t, 4, lc.Stat().Keys)
+	require.Eventually(t, func() bool { return lc.Stat().Keys == 4 }, 5*time.Second, 10*time.Millisecond,
+		"key-0 should expire")
 
-	time.Sleep(210 * time.Millisecond)
-	assert.Equal(t, 0, lc.keys())
+	require.Eventually(t, func() bool { return lc.keys() == 0 }, 5*time.Second, 10*time.Millisecond,
+		"all keys should expire")
 	assert.Equal(t, []string{}, lc.Keys())
 
 	assert.NoError(t, lc.Close())

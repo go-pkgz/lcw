@@ -81,7 +81,7 @@ func TestScache_Scopes(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "value-upd", string(res), "was deleted, update")
 
-	assert.Equal(t, CacheStat{Hits: 1, Misses: 3, Keys: 2, Size: 0, Errors: 0}, lc.Stat())
+	assert.Equal(t, CacheStat{Hits: 1, Misses: 3, Keys: 2, Size: 15, Errors: 0}, lc.Stat())
 }
 
 func TestScache_Flush(t *testing.T) {
@@ -299,5 +299,5 @@ func ExampleScache() {
 	// <html><body>test response</body></html>
 	// <html><body>test response</body></html>
 	// <html><body>test response</body></html>
-	// {hits:2, misses:1, ratio:0.67, keys:1, size:0, errors:0}
+	// {hits:2, misses:1, ratio:0.67, keys:1, size:39, errors:0}
 }

@@ -17,6 +17,7 @@ type ExpirableCache struct {
 	currentSize int64
 	id          string
 	backend     *cache.LoadingCache
+	loads       loadGroup
 }
 
 // NewExpirableCache makes expirable LoadingCache implementation, 1000 max keys by default and 5m TTL
@@ -49,8 +50,7 @@ func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
 			if res.onEvicted != nil {
 				res.onEvicted(key, value)
 			}
-			if s, ok := value.(Sizer); ok {
-				size := s.Size()
+			if size, ok := sizeOf(value); ok {
 				atomic.AddInt64(&res.currentSize, -1*int64(size))
 			}
 			// ignore the error on Publish as we don't have log inside the module and
@@ -74,27 +74,37 @@ func (c *ExpirableCache) Get(key string, fn func() (any, error)) (data any, err 
 		return v, nil
 	}
 
-	if data, err = fn(); err != nil {
-		atomic.AddInt64(&c.Errors, 1)
-		return data, err
-	}
-	atomic.AddInt64(&c.Misses, 1)
+	// concurrent callers for the same key wait for the first load instead of loading on their own,
+	// otherwise each of them would set the value and count its size again
+	return c.loads.do(key, func() (any, error) {
+		if v, ok := c.backend.Get(key); ok { // filled by the load we were waiting for
+			atomic.AddInt64(&c.Hits, 1)
+			return v, nil
+		}
 
-	if !c.allowed(key, data) {
-		return data, nil
-	}
+		data, err := fn()
+		if err != nil {
+			atomic.AddInt64(&c.Errors, 1)
+			return data, err
+		}
+		atomic.AddInt64(&c.Misses, 1)
 
-	if s, ok := data.(Sizer); ok {
-		if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize)+int64(s.Size()) >= c.maxCacheSize {
-			c.backend.DeleteExpired()
+		if !c.allowed(key, data) {
 			return data, nil
 		}
-		atomic.AddInt64(&c.currentSize, int64(s.Size()))
-	}
 
-	c.backend.Set(key, data)
+		if size, ok := sizeOf(data); ok {
+			if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize)+int64(size) >= c.maxCacheSize {
+				c.backend.DeleteExpired()
+				return data, nil
+			}
+			atomic.AddInt64(&c.currentSize, int64(size))
+		}
 
-	return data, nil
+		c.backend.Set(key, data)
+
+		return data, nil
+	})
 }
 
 // Invalidate removes keys with passed predicate fn, i.e. fn(key) should be true to get evicted
@@ -156,14 +166,14 @@ func (c *ExpirableCache) keys() int {
 }
 
 func (c *ExpirableCache) allowed(key string, data any) bool {
-	if c.backend.ItemCount() >= c.maxKeys {
+	if c.maxKeys > 0 && c.backend.ItemCount() >= c.maxKeys {
 		return false
 	}
 	if c.maxKeySize > 0 && len(key) > c.maxKeySize {
 		return false
 	}
-	if s, ok := data.(Sizer); ok {
-		if c.maxValueSize > 0 && s.Size() >= c.maxValueSize {
+	if size, ok := sizeOf(data); ok {
+		if c.maxValueSize > 0 && size >= c.maxValueSize {
 			return false
 		}
 	}

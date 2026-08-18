@@ -190,3 +190,100 @@ func TestRedisCache_BadOptions(t *testing.T) {
 	assert.EqualError(t, err, "failed to set cache option: negative max key size")
 
 }
+
+func TestRedisCache_KeyPrefix(t *testing.T) {
+	server := newTestRedisServer()
+	defer server.Close()
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	defer client.Close()
+	ctx := context.Background()
+
+	// data belonging to somebody else in the same redis db
+	require.NoError(t, client.Set(ctx, "foreign-key", "foreign-value", 0).Err())
+
+	rc, err := NewRedisCache(client, RedisKeyPrefix("lcw:"))
+	require.NoError(t, err)
+
+	_, err = rc.Get("key", func() (any, error) { return "value", nil })
+	require.NoError(t, err)
+
+	stored, err := client.Get(ctx, "lcw:key").Result()
+	require.NoError(t, err)
+	assert.Equal(t, "value", stored, "stored under the prefix")
+
+	assert.Equal(t, []string{"key"}, rc.Keys(), "keys reported without the prefix")
+	assert.Equal(t, 1, rc.Stat().Keys, "foreign key not counted")
+
+	// a key colliding with foreign data is a miss, not a hit on somebody else's value
+	var coldCalls int32
+	res, err := rc.Get("foreign-key", func() (any, error) {
+		atomic.AddInt32(&coldCalls, 1)
+		return "own-value", nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "own-value", res)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+	foreign, err := client.Get(ctx, "foreign-key").Result()
+	require.NoError(t, err)
+	assert.Equal(t, "foreign-value", foreign, "foreign value untouched")
+
+	// invalidate gets logical keys and removes only prefixed ones
+	rc.Invalidate(func(key string) bool {
+		assert.NotContains(t, key, "lcw:", "predicate gets the logical key")
+		return key == "key"
+	})
+	assert.Equal(t, 1, rc.Stat().Keys)
+	require.NoError(t, client.Get(ctx, "foreign-key").Err(), "foreign key kept")
+
+	// purge clears own namespace only, no FlushDB
+	rc.Purge()
+	assert.Equal(t, 0, rc.Stat().Keys)
+	assert.Empty(t, rc.Keys())
+	foreign, err = client.Get(ctx, "foreign-key").Result()
+	require.NoError(t, err, "foreign key survives purge")
+	assert.Equal(t, "foreign-value", foreign)
+}
+
+func TestRedisCache_KeyPrefixGlobChars(t *testing.T) {
+	server := newTestRedisServer()
+	defer server.Close()
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	defer client.Close()
+	ctx := context.Background()
+
+	rc, err := NewRedisCache(client, RedisKeyPrefix("lcw[1]:"))
+	require.NoError(t, err)
+
+	_, err = rc.Get("key", func() (any, error) { return "value", nil })
+	require.NoError(t, err)
+
+	// a key that a naive, unescaped glob would also match
+	require.NoError(t, client.Set(ctx, "lcw1:other", "other-value", 0).Err())
+
+	assert.Equal(t, []string{"key"}, rc.Keys(), "glob metacharacters matched literally")
+	assert.Equal(t, 1, rc.Stat().Keys)
+
+	rc.Purge()
+	require.NoError(t, client.Get(ctx, "lcw1:other").Err(), "key matching the unescaped glob kept")
+}
+
+func TestRedisCache_NoPrefixOwnsDatabase(t *testing.T) {
+	server := newTestRedisServer()
+	defer server.Close()
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	defer client.Close()
+	ctx := context.Background()
+
+	require.NoError(t, client.Set(ctx, "foreign-key", "foreign-value", 0).Err())
+
+	rc, err := NewRedisCache(client)
+	require.NoError(t, err)
+
+	_, err = rc.Get("key", func() (any, error) { return "value", nil })
+	require.NoError(t, err)
+
+	// documented behavior without a prefix, the whole db belongs to the cache
+	assert.Equal(t, 2, rc.Stat().Keys, "foreign key counted")
+	rc.Purge()
+	assert.Equal(t, redis.Nil, client.Get(ctx, "foreign-key").Err(), "purge flushes the db")
+}

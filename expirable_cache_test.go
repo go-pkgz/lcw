@@ -38,14 +38,15 @@ func TestExpirableCache(t *testing.T) {
 	assert.Equal(t, int64(6), lc.Stat().Misses)
 
 	// let key-0 expire, GitHub Actions friendly way
-	for lc.Stat().Keys > 4 {
+	require.Eventually(t, func() bool {
 		lc.backend.DeleteExpired() // enforce DeleteExpired for GitHub earlier than TTL/2
-		time.Sleep(time.Millisecond * 10)
-	}
-	assert.Equal(t, 4, lc.Stat().Keys)
+		return lc.Stat().Keys == 4
+	}, 5*time.Second, 10*time.Millisecond, "key-0 should expire")
 
-	time.Sleep(210 * time.Millisecond)
-	assert.Equal(t, 0, lc.keys())
+	require.Eventually(t, func() bool {
+		lc.backend.DeleteExpired()
+		return lc.keys() == 0
+	}, 5*time.Second, 10*time.Millisecond, "all keys should expire")
 	assert.Equal(t, []string{}, lc.Keys())
 
 	assert.NoError(t, lc.Close())
@@ -150,18 +151,18 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	assert.Equal(t, int64(1), lc2.Stat().Misses, lc2.Stat())
 
 	// let key-0 expire, GitHub Actions friendly way
-	for lc1.Stat().Keys > 4 {
+	require.Eventually(t, func() bool {
 		lc1.backend.DeleteExpired() // enforce DeleteExpired for GitHub earlier than TTL/2
 		ps.Wait()                   // wait for onBusEvent goroutines to finish
-		time.Sleep(time.Millisecond * 10)
-	}
-	assert.Equal(t, 4, lc1.Stat().Keys)
+		return lc1.Stat().Keys == 4
+	}, 5*time.Second, 10*time.Millisecond, "key-0 should expire")
 	assert.Equal(t, 1, lc2.Stat().Keys, "key-1 still in cache2")
 	assert.Equal(t, 1, len(ps.CalledKeys()))
 
-	time.Sleep(210 * time.Millisecond) // let all keys expire
-	ps.Wait()                          // wait for onBusEvent goroutines to finish
+	require.Eventually(t, func() bool {
+		lc1.backend.DeleteExpired()
+		ps.Wait() // wait for onBusEvent goroutines to finish
+		return lc1.Stat().Keys == 0 && lc2.Stat().Keys == 0
+	}, 5*time.Second, 10*time.Millisecond, "all keys should expire")
 	assert.Equal(t, 6, len(ps.CalledKeys()), "6 events, key-1 expired %+v", ps.calledKeys)
-	assert.Equal(t, 0, lc1.Stat().Keys)
-	assert.Equal(t, 0, lc2.Stat().Keys, "key-1 removed from cache2")
 }

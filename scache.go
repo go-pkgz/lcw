@@ -2,6 +2,7 @@ package lcw
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -19,7 +20,7 @@ func NewScache(lc LoadingCache) *Scache {
 // Get retrieves a key from underlying backend
 func (m *Scache) Get(key Key, fn func() ([]byte, error)) (data []byte, err error) {
 	keyStr := key.String()
-	val, err := m.lc.Get(keyStr, func() (value interface{}, e error) {
+	val, err := m.lc.Get(keyStr, func() (value any, e error) {
 		return fn()
 	})
 	return val.([]byte), err
@@ -49,10 +50,8 @@ func (m *Scache) Flush(req FlusherRequest) {
 			return false
 		}
 		for _, s := range req.scopes {
-			for _, ks := range key.scopes {
-				if ks == s {
-					return true
-				}
+			if slices.Contains(key.scopes, s) {
+				return true
 			}
 		}
 		return false

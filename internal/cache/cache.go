@@ -16,7 +16,7 @@ type LoadingCache struct {
 	ttl        time.Duration
 	maxKeys    int64
 	done       chan struct{}
-	onEvicted  func(key string, value interface{})
+	onEvicted  func(key string, value any)
 
 	mu   sync.Mutex
 	data map[string]*cacheItem
@@ -64,7 +64,7 @@ func NewLoadingCache(options ...Option) (*LoadingCache, error) {
 }
 
 // Set key
-func (c *LoadingCache) Set(key string, value interface{}) {
+func (c *LoadingCache) Set(key string, value any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -84,7 +84,7 @@ func (c *LoadingCache) Set(key string, value interface{}) {
 }
 
 // Get returns the key value
-func (c *LoadingCache) Get(key string) (interface{}, bool) {
+func (c *LoadingCache) Get(key string) (any, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	value, ok := c.getValue(key)
@@ -95,7 +95,7 @@ func (c *LoadingCache) Get(key string) (interface{}, bool) {
 }
 
 // Peek returns the key value (or undefined if not found) without updating the "recently used"-ness of the key.
-func (c *LoadingCache) Peek(key string) (interface{}, bool) {
+func (c *LoadingCache) Peek(key string) (any, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	value, ok := c.getValue(key)
@@ -143,7 +143,7 @@ func (c *LoadingCache) Keys() []string {
 }
 
 // get value respecting the expiration, should be called with lock
-func (c *LoadingCache) getValue(key string) (interface{}, bool) {
+func (c *LoadingCache) getValue(key string) (any, bool) {
 	value, ok := c.data[key]
 	if !ok {
 		return nil, false
@@ -245,5 +245,5 @@ func (c *LoadingCache) purge(maxKeys int64) {
 
 type cacheItem struct {
 	expiresAt time.Time
-	data      interface{}
+	data      any
 }

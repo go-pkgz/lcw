@@ -3,7 +3,7 @@ package lcw
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -48,7 +48,7 @@ func TestExpirableRedisCache(t *testing.T) {
 	assert.Equal(t, int64(5), rc.Stat().Misses)
 
 	keys := rc.Keys()
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	slices.Sort(keys)
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
 	_, e := rc.Get("key-xx", func() (string, error) {

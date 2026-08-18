@@ -45,7 +45,7 @@ func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
 		cache.MaxKeys(res.maxKeys),
 		cache.TTL(res.ttl),
 		cache.PurgeEvery(res.ttl/2),
-		cache.OnEvicted(func(key string, value interface{}) {
+		cache.OnEvicted(func(key string, value any) {
 			if res.onEvicted != nil {
 				res.onEvicted(key, value)
 			}
@@ -68,7 +68,7 @@ func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
 }
 
 // Get gets value by key or load with fn if not found in cache
-func (c *ExpirableCache) Get(key string, fn func() (interface{}, error)) (data interface{}, err error) {
+func (c *ExpirableCache) Get(key string, fn func() (any, error)) (data any, err error) {
 	if v, ok := c.backend.Get(key); ok {
 		atomic.AddInt64(&c.Hits, 1)
 		return v, nil
@@ -103,7 +103,7 @@ func (c *ExpirableCache) Invalidate(fn func(key string) bool) {
 }
 
 // Peek returns the key value (or undefined if not found) without updating the "recently used"-ness of the key.
-func (c *ExpirableCache) Peek(key string) (interface{}, bool) {
+func (c *ExpirableCache) Peek(key string) (any, bool) {
 	return c.backend.Peek(key)
 }
 
@@ -155,7 +155,7 @@ func (c *ExpirableCache) keys() int {
 	return c.backend.ItemCount()
 }
 
-func (c *ExpirableCache) allowed(key string, data interface{}) bool {
+func (c *ExpirableCache) allowed(key string, data any) bool {
 	if c.backend.ItemCount() >= c.maxKeys {
 		return false
 	}

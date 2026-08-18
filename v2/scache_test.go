@@ -208,7 +208,7 @@ func TestScache_Parallel(t *testing.T) {
 			defer wg.Done()
 			res, err := lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
 				atomic.AddInt32(&coldCalls, 1)
-				return []byte(fmt.Sprintf("result-%d", i)), nil
+				return fmt.Appendf(nil, "result-%d", i), nil
 			})
 			require.NoError(t, err)
 			require.Equal(t, "value", string(res))

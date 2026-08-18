@@ -2,7 +2,7 @@ package lcw
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -28,7 +28,7 @@ func TestExpirableCache(t *testing.T) {
 	assert.Equal(t, int64(5), lc.Stat().Misses)
 
 	keys := lc.Keys()
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	slices.Sort(keys)
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
 	_, e := lc.Get("key-xx", func() (string, error) {

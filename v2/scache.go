@@ -2,6 +2,7 @@ package lcw
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -49,10 +50,8 @@ func (m *Scache[V]) Flush(req FlusherRequest) {
 			return false
 		}
 		for _, s := range req.scopes {
-			for _, ks := range key.scopes {
-				if ks == s {
-					return true
-				}
+			if slices.Contains(key.scopes, s) {
+				return true
 			}
 		}
 		return false

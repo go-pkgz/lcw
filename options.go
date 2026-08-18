@@ -13,7 +13,7 @@ type options struct {
 	maxKeySize   int
 	maxCacheSize int64
 	ttl          time.Duration
-	onEvicted    func(key string, value interface{})
+	onEvicted    func(key string, value any)
 	eventBus     eventbus.PubSub
 }
 
@@ -81,7 +81,7 @@ func TTL(ttl time.Duration) Option {
 }
 
 // OnEvicted sets callback on invalidation event
-func OnEvicted(fn func(key string, value interface{})) Option {
+func OnEvicted(fn func(key string, value any)) Option {
 	return func(o *options) error {
 		o.onEvicted = fn
 		return nil

@@ -6,7 +6,7 @@ import "time"
 type Option func(lc *LoadingCache) error
 
 // OnEvicted called automatically for expired and manually deleted entries
-func OnEvicted(fn func(key string, value interface{})) Option {
+func OnEvicted(fn func(key string, value any)) Option {
 	return func(lc *LoadingCache) error {
 		lc.onEvicted = fn
 		return nil

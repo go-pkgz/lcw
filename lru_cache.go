@@ -43,7 +43,7 @@ func (c *LruCache) init() error {
 		return fmt.Errorf("can't subscribe to event bus: %w", err)
 	}
 
-	onEvicted := func(key interface{}, value interface{}) {
+	onEvicted := func(key any, value any) {
 		if c.onEvicted != nil {
 			c.onEvicted(key.(string), value)
 		}
@@ -64,7 +64,7 @@ func (c *LruCache) init() error {
 }
 
 // Get gets value by key or load with fn if not found in cache
-func (c *LruCache) Get(key string, fn func() (interface{}, error)) (data interface{}, err error) {
+func (c *LruCache) Get(key string, fn func() (any, error)) (data any, err error) {
 	if v, ok := c.backend.Get(key); ok {
 		atomic.AddInt64(&c.Hits, 1)
 		return v, nil
@@ -96,7 +96,7 @@ func (c *LruCache) Get(key string, fn func() (interface{}, error)) (data interfa
 }
 
 // Peek returns the key value (or undefined if not found) without updating the "recently used"-ness of the key.
-func (c *LruCache) Peek(key string) (interface{}, bool) {
+func (c *LruCache) Peek(key string) (any, bool) {
 	return c.backend.Peek(key)
 }
 
@@ -161,7 +161,7 @@ func (c *LruCache) keys() int {
 	return c.backend.Len()
 }
 
-func (c *LruCache) allowed(key string, data interface{}) bool {
+func (c *LruCache) allowed(key string, data any) bool {
 	if c.maxKeySize > 0 && len(key) > c.maxKeySize {
 		return false
 	}

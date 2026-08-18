@@ -34,7 +34,7 @@ func TestLoadingCacheWithPurge(t *testing.T) {
 	lc, err := NewLoadingCache(
 		PurgeEvery(time.Millisecond*100),
 		TTL(150*time.Millisecond),
-		OnEvicted(func(key string, value interface{}) { evicted = append(evicted, key, value.(string)) }),
+		OnEvicted(func(key string, value any) { evicted = append(evicted, key, value.(string)) }),
 	)
 	assert.NoError(t, err)
 	defer lc.Close()
@@ -129,7 +129,7 @@ func TestLoadingCacheConcurrency(t *testing.T) {
 
 func TestLoadingCacheInvalidateAndEvict(t *testing.T) {
 	var evicted int
-	lc, err := NewLoadingCache(OnEvicted(func(_ string, _ interface{}) { evicted++ }))
+	lc, err := NewLoadingCache(OnEvicted(func(_ string, _ any) { evicted++ }))
 	assert.NoError(t, err)
 	defer lc.Close()
 

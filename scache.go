@@ -23,7 +23,20 @@ func (m *Scache) Get(key Key, fn func() ([]byte, error)) (data []byte, err error
 	val, err := m.lc.Get(keyStr, func() (value any, e error) {
 		return fn()
 	})
-	return val.([]byte), err
+	// backends store what the loader returned, but RedisCache reads values back as strings
+	switch v := val.(type) {
+	case nil:
+		return nil, err
+	case []byte:
+		return v, err
+	case string:
+		return []byte(v), err
+	default:
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("can't convert cached value for key %s from %T to []byte", keyStr, val)
+	}
 }
 
 // Stat delegates the call to the underlying cache backend
@@ -36,18 +49,20 @@ func (m *Scache) Close() error {
 	return m.lc.Close()
 }
 
-// Flush clears cache and calls postFlushFn async
+// Flush clears keys of the requested partition, matching the requested scopes.
+// With no scopes set every key of the partition is removed, keys of other partitions are kept.
 func (m *Scache) Flush(req FlusherRequest) {
-	if len(req.scopes) == 0 {
-		m.lc.Purge()
-		return
-	}
-
-	// check if fullKey has matching scopes
+	// check if fullKey belongs to the requested partition and has matching scopes
 	inScope := func(fullKey string) bool {
 		key, err := parseKey(fullKey)
 		if err != nil {
 			return false
+		}
+		if key.partition != req.partition {
+			return false
+		}
+		if len(req.scopes) == 0 { // no scopes means the whole partition
+			return true
 		}
 		for _, s := range req.scopes {
 			if slices.Contains(key.scopes, s) {

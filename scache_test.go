@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -299,4 +300,68 @@ func ExampleScache() {
 	// <html><body>test response</body></html>
 	// <html><body>test response</body></html>
 	// {hits:2, misses:1, ratio:0.67, keys:1, size:39, errors:0}
+}
+
+func TestScache_FlushPartitions(t *testing.T) {
+	lru, err := NewLruCache()
+	require.NoError(t, err)
+	lc := NewScache(lru)
+	defer lc.Close()
+
+	addToCache := func(partition, id string, scopes ...string) {
+		_, err := lc.Get(NewKey(partition).ID(id).Scopes(scopes...), func() ([]byte, error) {
+			return []byte("value-" + partition + "-" + id), nil
+		})
+		require.NoError(t, err)
+	}
+
+	addToCache("site1", "key1", "s1", "shared")
+	addToCache("site1", "key2", "s2")
+	addToCache("site2", "key1", "s1", "shared")
+	addToCache("site2", "key2", "s2")
+	require.Equal(t, 4, len(lc.lc.Keys()))
+
+	// scoped flush of one partition keeps the same scope in the other one
+	lc.Flush(Flusher("site1").Scopes("shared"))
+	keys := lc.lc.Keys()
+	assert.Equal(t, 3, len(keys))
+	assert.NotContains(t, keys, NewKey("site1").ID("key1").Scopes("s1", "shared").String())
+	assert.Contains(t, keys, NewKey("site2").ID("key1").Scopes("s1", "shared").String(), "other partition kept")
+
+	// flush with no scopes clears the whole partition and nothing else
+	lc.Flush(Flusher("site1"))
+	keys = lc.lc.Keys()
+	assert.Equal(t, 2, len(keys))
+	for _, k := range keys {
+		key, err := parseKey(k)
+		require.NoError(t, err)
+		assert.Equal(t, "site2", key.partition, "only site2 keys left")
+	}
+}
+
+func TestScache_RedisBackend(t *testing.T) {
+	server := newTestRedisServer()
+	defer server.Close()
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	rc, err := NewRedisCache(client)
+	require.NoError(t, err)
+
+	lc := NewScache(rc)
+	defer lc.Close()
+
+	var coldCalls int32
+	loader := func() ([]byte, error) {
+		atomic.AddInt32(&coldCalls, 1)
+		return []byte("value"), nil
+	}
+
+	res, err := lc.Get(NewKey("site").ID("key").Scopes("s1"), loader)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("value"), res, "miss returns loaded bytes")
+
+	// redis returns the value back as a string, it has to be converted rather than asserted
+	res, err = lc.Get(NewKey("site").ID("key").Scopes("s1"), loader)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("value"), res, "hit returns the same bytes")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
 }

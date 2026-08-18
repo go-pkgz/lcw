@@ -264,6 +264,13 @@ func TestRedisCache_KeyPrefix(t *testing.T) {
 	assert.Equal(t, 1, rc.Stat().Keys)
 	require.NoError(t, client.Get(ctx, "foreign-key").Err(), "foreign key kept")
 
+	// several keys, purge used to issue one multi-key Del which a cluster client
+	// routes by the first key's slot and rejects across slots
+	for _, k := range []string{"k1", "k2", "k3"} {
+		_, err = rc.Get(k, func() (string, error) { return "value", nil })
+		require.NoError(t, err)
+	}
+
 	// purge clears own namespace only, no FlushDB
 	rc.Purge()
 	assert.Equal(t, 0, rc.Stat().Keys)

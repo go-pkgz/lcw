@@ -1,6 +1,9 @@
 package lcw
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // loadGroup makes sure only one load function per key runs at a time.
 // concurrent calls for the same key wait for the in-flight one and share its result,
@@ -35,14 +38,26 @@ func (g *loadGroup[V]) do(key string, fn func() (V, error)) (V, error) {
 	g.calls[key] = call
 	g.mu.Unlock()
 
-	// released even if fn panics, otherwise waiters would block forever
+	// waiters are released even if fn panics, and get an error instead of a zero value
+	// with no error at all. The panic keeps propagating in the calling goroutine, as it
+	// would without the load coordination.
 	defer func() {
-		g.mu.Lock()
-		delete(g.calls, key)
-		g.mu.Unlock()
-		call.wg.Done()
+		if p := recover(); p != nil {
+			call.err = fmt.Errorf("cache loader panic: %v", p)
+			g.done(key, call)
+			panic(p)
+		}
+		g.done(key, call)
 	}()
 
 	call.val, call.err = fn()
 	return call.val, call.err
+}
+
+// done drops the in-flight call and releases everybody waiting for it
+func (g *loadGroup[V]) done(key string, call *loadCall[V]) {
+	g.mu.Lock()
+	delete(g.calls, key)
+	g.mu.Unlock()
+	call.wg.Done()
 }

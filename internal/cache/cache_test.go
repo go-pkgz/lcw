@@ -319,3 +319,29 @@ func TestLoadingCache_CallbacksOutsideLock(t *testing.T) {
 		assert.Equal(t, []string{"key1"}, evicted)
 	})
 }
+
+func TestLoadingCache_PurgeWithExpiredAndSizeEviction(t *testing.T) {
+	// an entry expiring in the same purge pass used to be taken as a size eviction
+	// candidate, and skipping it consumed an eviction without removing anything,
+	// leaving the cache above maxKeys.
+	// maxKeys 3 with 5 entries stays below the maxKeys*2 threshold that makes Set purge on its own
+	lc, err := NewLoadingCache(MaxKeys(3), TTL(time.Hour))
+	require.NoError(t, err)
+	defer lc.Close()
+
+	for _, k := range []string{"expired", "key1", "key2", "key3", "key4"} {
+		lc.Set(k, "val")
+	}
+	require.Equal(t, 5, lc.ItemCount(), "no purge from Set yet")
+
+	lc.mu.Lock()
+	lc.data["expired"].expiresAt = time.Now().Add(-time.Hour)
+	evicted := lc.purge(3)
+	got := len(lc.data)
+	_, stillThere := lc.data["expired"]
+	lc.mu.Unlock()
+
+	assert.Equal(t, 3, got, "maxKeys enforced despite the entry expiring in the same pass")
+	assert.False(t, stillThere, "expired entry removed")
+	assert.Len(t, evicted, 2, "one expired plus one size eviction")
+}

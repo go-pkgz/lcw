@@ -152,8 +152,10 @@ func (c *RedisCache[V]) Purge() {
 		c.backend.FlushDB(context.Background())
 		return
 	}
-	if keys := c.scanKeys(); len(keys) > 0 {
-		c.backend.Del(context.Background(), keys...)
+	// deleted one by one, a multi-key Del is routed by the first key's slot
+	// and fails across slots on a cluster client
+	for _, key := range c.scanKeys() {
+		c.backend.Del(context.Background(), key)
 	}
 }
 

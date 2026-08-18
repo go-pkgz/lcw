@@ -799,3 +799,48 @@ func TestCache_MaxKeysZeroUnlimited(t *testing.T) {
 		})
 	}
 }
+
+func TestCache_LoaderPanicReleasesWaiters(t *testing.T) {
+	// a panicking loader used to release waiters with a zero value and no error,
+	// so they silently treated it as a successful load
+	lc, err := NewLruCache(MaxKeys(50))
+	require.NoError(t, err)
+	defer lc.Close()
+
+	leaderIn := make(chan struct{})
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer func() {
+			assert.NotNil(t, recover(), "panic still propagates to the caller that loaded")
+		}()
+		_, _ = lc.Get("key", func() (any, error) {
+			close(leaderIn)
+			time.Sleep(50 * time.Millisecond) // let the waiter join
+			panic("loader blew up")
+		})
+	}()
+
+	<-leaderIn
+	done := make(chan struct{})
+	var waiterVal any
+	var waiterErr error
+	go func() {
+		defer close(done)
+		waiterVal, waiterErr = lc.Get("key", func() (any, error) { return "should not be called", nil })
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "waiter not released after the loader panicked")
+	}
+	wg.Wait()
+
+	require.Error(t, waiterErr, "waiter gets an error, not a silent zero value")
+	assert.Contains(t, waiterErr.Error(), "cache loader panic")
+	assert.Nil(t, waiterVal)
+	assert.Equal(t, 0, lc.Stat().Keys, "nothing cached")
+}

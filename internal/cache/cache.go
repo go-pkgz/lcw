@@ -233,6 +233,7 @@ func (c *LoadingCache) purge(maxKeys int64) (evicted []evictedItem) {
 		if time.Now().After(value.expiresAt) {
 			delete(c.data, key)
 			evicted = append(evicted, evictedItem{key: key, value: value.data})
+			continue // gone already, taking it as a size eviction candidate would waste an eviction
 		}
 
 		// prepare list of keysWithTS for size eviction
@@ -248,10 +249,10 @@ func (c *LoadingCache) purge(maxKeys int64) (evicted []evictedItem) {
 	size := int64(len(c.data))
 	if len(kts) > 0 {
 		sort.Slice(kts, func(i int, j int) bool { return kts[i].ts.Before(kts[j].ts) })
-		for d := 0; int64(d) < size-maxKeys; d++ {
+		for d := 0; int64(d) < size-maxKeys && d < len(kts); d++ {
 			key := kts[d].key
 			value, ok := c.data[key]
-			if !ok { // already removed by the ttl eviction above
+			if !ok {
 				continue
 			}
 			delete(c.data, key)

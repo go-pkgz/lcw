@@ -25,6 +25,7 @@ type ExpirableCache[V any] struct {
 // Note that the underlying hashicorp/golang-lru expirable backend calls eviction callbacks while
 // holding its own lock, so an OnEvicted handler must not call back into the same cache, it would deadlock.
 // The same handler is safe to use with LruCache and with the v1 ExpirableCache.
+// Reported upstream as https://github.com/hashicorp/golang-lru/issues/230
 func NewExpirableCache[V any](opts ...Option[V]) (*ExpirableCache[V], error) {
 	res := ExpirableCache[V]{
 		Workers: Workers[V]{

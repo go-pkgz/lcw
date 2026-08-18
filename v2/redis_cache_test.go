@@ -3,7 +3,7 @@ package lcw
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -48,7 +48,7 @@ func TestExpirableRedisCache(t *testing.T) {
 	assert.Equal(t, int64(5), rc.Stat().Misses)
 
 	keys := rc.Keys()
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	slices.Sort(keys)
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
 	_, e := rc.Get("key-xx", func() (string, error) {
@@ -198,4 +198,130 @@ func TestRedisCache_BadOptions(t *testing.T) {
 	_, err = NewRedisCache(client, o.MaxKeySize(-1))
 	assert.EqualError(t, err, "failed to set cache option: negative max key size")
 
+}
+
+func TestRedisCache_PeekStringBasedType(t *testing.T) {
+	server := newTestRedisServer()
+	defer server.Close()
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	defer client.Close()
+
+	o := NewOpts[sizedString]()
+	rc, err := NewRedisCache(client, o.StrToV(func(s string) sizedString { return sizedString(s) }))
+	require.NoError(t, err)
+
+	_, err = rc.Get("key", func() (sizedString, error) { return "value", nil })
+	require.NoError(t, err)
+
+	// Peek asserted the redis string to V directly, which panics for a string-based type
+	res, ok := rc.Peek("key")
+	require.True(t, ok)
+	assert.Equal(t, sizedString("value"), res)
+}
+
+func TestRedisCache_KeyPrefix(t *testing.T) {
+	server := newTestRedisServer()
+	defer server.Close()
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	defer client.Close()
+	ctx := context.Background()
+
+	// data belonging to somebody else in the same redis db
+	require.NoError(t, client.Set(ctx, "foreign-key", "foreign-value", 0).Err())
+
+	o := NewOpts[string]()
+	rc, err := NewRedisCache(client, o.RedisKeyPrefix("lcw:"))
+	require.NoError(t, err)
+
+	_, err = rc.Get("key", func() (string, error) { return "value", nil })
+	require.NoError(t, err)
+
+	stored, err := client.Get(ctx, "lcw:key").Result()
+	require.NoError(t, err)
+	assert.Equal(t, "value", stored, "stored under the prefix")
+
+	assert.Equal(t, []string{"key"}, rc.Keys(), "keys reported without the prefix")
+	assert.Equal(t, 1, rc.Stat().Keys, "foreign key not counted")
+
+	// a key colliding with foreign data is a miss, not a hit on somebody else's value
+	var coldCalls int32
+	res, err := rc.Get("foreign-key", func() (string, error) {
+		atomic.AddInt32(&coldCalls, 1)
+		return "own-value", nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "own-value", res)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+	foreign, err := client.Get(ctx, "foreign-key").Result()
+	require.NoError(t, err)
+	assert.Equal(t, "foreign-value", foreign, "foreign value untouched")
+
+	// invalidate gets logical keys and removes only prefixed ones
+	rc.Invalidate(func(key string) bool {
+		assert.NotContains(t, key, "lcw:", "predicate gets the logical key")
+		return key == "key"
+	})
+	assert.Equal(t, 1, rc.Stat().Keys)
+	require.NoError(t, client.Get(ctx, "foreign-key").Err(), "foreign key kept")
+
+	// several keys, purge used to issue one multi-key Del which a cluster client
+	// routes by the first key's slot and rejects across slots
+	for _, k := range []string{"k1", "k2", "k3"} {
+		_, err = rc.Get(k, func() (string, error) { return "value", nil })
+		require.NoError(t, err)
+	}
+
+	// purge clears own namespace only, no FlushDB
+	rc.Purge()
+	assert.Equal(t, 0, rc.Stat().Keys)
+	assert.Empty(t, rc.Keys())
+	foreign, err = client.Get(ctx, "foreign-key").Result()
+	require.NoError(t, err, "foreign key survives purge")
+	assert.Equal(t, "foreign-value", foreign)
+}
+
+func TestRedisCache_KeyPrefixGlobChars(t *testing.T) {
+	server := newTestRedisServer()
+	defer server.Close()
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	defer client.Close()
+	ctx := context.Background()
+
+	o := NewOpts[string]()
+	rc, err := NewRedisCache(client, o.RedisKeyPrefix("lcw[1]:"))
+	require.NoError(t, err)
+
+	_, err = rc.Get("key", func() (string, error) { return "value", nil })
+	require.NoError(t, err)
+
+	// a key that a naive, unescaped glob would also match
+	require.NoError(t, client.Set(ctx, "lcw1:other", "other-value", 0).Err())
+
+	assert.Equal(t, []string{"key"}, rc.Keys(), "glob metacharacters matched literally")
+	assert.Equal(t, 1, rc.Stat().Keys)
+
+	rc.Purge()
+	require.NoError(t, client.Get(ctx, "lcw1:other").Err(), "key matching the unescaped glob kept")
+}
+
+func TestRedisCache_NoPrefixOwnsDatabase(t *testing.T) {
+	server := newTestRedisServer()
+	defer server.Close()
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	defer client.Close()
+	ctx := context.Background()
+
+	require.NoError(t, client.Set(ctx, "foreign-key", "foreign-value", 0).Err())
+
+	o := NewOpts[string]()
+	rc, err := NewRedisCache(client, o.MaxKeys(100))
+	require.NoError(t, err)
+
+	_, err = rc.Get("key", func() (string, error) { return "value", nil })
+	require.NoError(t, err)
+
+	// documented behavior without a prefix, the whole db belongs to the cache
+	assert.Equal(t, 2, rc.Stat().Keys, "foreign key counted")
+	rc.Purge()
+	assert.Equal(t, redis.Nil, client.Get(ctx, "foreign-key").Err(), "purge flushes the db")
 }

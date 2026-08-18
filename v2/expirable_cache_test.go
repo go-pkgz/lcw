@@ -2,7 +2,7 @@ package lcw
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -28,7 +28,7 @@ func TestExpirableCache(t *testing.T) {
 	assert.Equal(t, int64(5), lc.Stat().Misses)
 
 	keys := lc.Keys()
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	slices.Sort(keys)
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
 	_, e := lc.Get("key-xx", func() (string, error) {
@@ -39,13 +39,11 @@ func TestExpirableCache(t *testing.T) {
 	assert.Equal(t, int64(6), lc.Stat().Misses)
 
 	// let key-0 expire, GitHub Actions friendly way
-	for lc.Stat().Keys > 4 {
-		time.Sleep(time.Millisecond * 10)
-	}
-	assert.Equal(t, 4, lc.Stat().Keys)
+	require.Eventually(t, func() bool { return lc.Stat().Keys <= 4 }, 5*time.Second, 10*time.Millisecond, // exact count races with the next expiry
+		"key-0 should expire")
 
-	time.Sleep(210 * time.Millisecond)
-	assert.Equal(t, 0, lc.keys())
+	require.Eventually(t, func() bool { return lc.keys() == 0 }, 5*time.Second, 10*time.Millisecond,
+		"all keys should expire")
 	assert.Equal(t, []string{}, lc.Keys())
 
 	assert.NoError(t, lc.Close())

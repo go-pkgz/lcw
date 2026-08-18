@@ -2,13 +2,12 @@ package eventbus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-
-	"github.com/hashicorp/go-multierror"
 )
 
 // NewRedisPubSub creates new RedisPubSub with given parameters.
@@ -67,12 +66,12 @@ func (m *RedisPubSub) Publish(fromID, key string) error {
 // Close cleans up running goroutines and closes Redis clients
 func (m *RedisPubSub) Close() error {
 	close(m.done)
-	errs := new(multierror.Error)
+	var errs []error
 	if err := m.pubSub.Close(); err != nil {
-		errs = multierror.Append(errs, fmt.Errorf("problem closing pubSub client: %w", err))
+		errs = append(errs, fmt.Errorf("problem closing pubSub client: %w", err))
 	}
 	if err := m.client.Close(); err != nil {
-		errs = multierror.Append(errs, fmt.Errorf("problem closing redis client: %w", err))
+		errs = append(errs, fmt.Errorf("problem closing redis client: %w", err))
 	}
-	return errs.ErrorOrNil()
+	return errors.Join(errs...)
 }

@@ -16,7 +16,7 @@ type LoadingCache struct {
 	ttl        time.Duration
 	maxKeys    int64
 	done       chan struct{}
-	onEvicted  func(key string, value interface{})
+	onEvicted  func(key string, value any)
 
 	mu   sync.Mutex
 	data map[string]*cacheItem
@@ -54,8 +54,9 @@ func NewLoadingCache(options ...Option) (*LoadingCache, error) {
 					return
 				case <-ticker.C:
 					res.mu.Lock()
-					res.purge(res.maxKeys)
+					evicted := res.purge(res.maxKeys)
 					res.mu.Unlock()
+					res.notifyEvicted(evicted)
 				}
 			}
 		}(res.done)
@@ -64,9 +65,8 @@ func NewLoadingCache(options ...Option) (*LoadingCache, error) {
 }
 
 // Set key
-func (c *LoadingCache) Set(key string, value interface{}) {
+func (c *LoadingCache) Set(key string, value any) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	now := time.Now()
 	if _, ok := c.data[key]; !ok {
@@ -78,13 +78,17 @@ func (c *LoadingCache) Set(key string, value interface{}) {
 	// Enforced purge call in addition the one from the ticker
 	// to limit the worst-case scenario with a lot of sets in the
 	// short period of time (between two timed purge calls)
+	var evicted []evictedItem
 	if c.maxKeys > 0 && int64(len(c.data)) >= c.maxKeys*2 {
-		c.purge(c.maxKeys)
+		evicted = c.purge(c.maxKeys)
 	}
+	c.mu.Unlock()
+
+	c.notifyEvicted(evicted)
 }
 
 // Get returns the key value
-func (c *LoadingCache) Get(key string) (interface{}, bool) {
+func (c *LoadingCache) Get(key string) (any, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	value, ok := c.getValue(key)
@@ -95,7 +99,7 @@ func (c *LoadingCache) Get(key string) (interface{}, bool) {
 }
 
 // Peek returns the key value (or undefined if not found) without updating the "recently used"-ness of the key.
-func (c *LoadingCache) Peek(key string) (interface{}, bool) {
+func (c *LoadingCache) Peek(key string) (any, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	value, ok := c.getValue(key)
@@ -108,27 +112,38 @@ func (c *LoadingCache) Peek(key string) (interface{}, bool) {
 // Invalidate key (item) from the cache
 func (c *LoadingCache) Invalidate(key string) {
 	c.mu.Lock()
+	var evicted []evictedItem
 	if value, ok := c.data[key]; ok {
 		delete(c.data, key)
-		if c.onEvicted != nil {
-			c.onEvicted(key, value.data)
-		}
+		evicted = append(evicted, evictedItem{key: key, value: value.data})
 	}
 	c.mu.Unlock()
+
+	c.notifyEvicted(evicted)
 }
 
 // InvalidateFn deletes multiple keys if predicate is true
 func (c *LoadingCache) InvalidateFn(fn func(key string) bool) {
-	c.mu.Lock()
-	for key, value := range c.data {
+	// predicate runs outside the lock, it may call back into the cache
+	keys := c.Keys()
+	matched := make([]string, 0, len(keys))
+	for _, key := range keys {
 		if fn(key) {
+			matched = append(matched, key)
+		}
+	}
+
+	c.mu.Lock()
+	evicted := make([]evictedItem, 0, len(matched))
+	for _, key := range matched {
+		if value, ok := c.data[key]; ok {
 			delete(c.data, key)
-			if c.onEvicted != nil {
-				c.onEvicted(key, value.data)
-			}
+			evicted = append(evicted, evictedItem{key: key, value: value.data})
 		}
 	}
 	c.mu.Unlock()
+
+	c.notifyEvicted(evicted)
 }
 
 // Keys return slice of current keys in the cache
@@ -143,7 +158,7 @@ func (c *LoadingCache) Keys() []string {
 }
 
 // get value respecting the expiration, should be called with lock
-func (c *LoadingCache) getValue(key string) (interface{}, bool) {
+func (c *LoadingCache) getValue(key string) (any, bool) {
 	value, ok := c.data[key]
 	if !ok {
 		return nil, false
@@ -157,24 +172,26 @@ func (c *LoadingCache) getValue(key string) (interface{}, bool) {
 // Purge clears the cache completely.
 func (c *LoadingCache) Purge() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	// to release the memory, as otherwise old map would store same amount of entries to prevent reallocations
 	oldData := c.data
 	c.data = make(map[string]*cacheItem)
+	c.mu.Unlock()
 
+	evicted := make([]evictedItem, 0, len(oldData))
 	for k, v := range oldData {
-		if c.onEvicted != nil {
-			c.onEvicted(k, v.data)
-		}
+		evicted = append(evicted, evictedItem{key: k, value: v.data})
 	}
+	c.notifyEvicted(evicted)
 }
 
 // DeleteExpired clears cache of expired items
 func (c *LoadingCache) DeleteExpired() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.purge(0)
+	evicted := c.purge(0)
+	c.mu.Unlock()
+
+	c.notifyEvicted(evicted)
 }
 
 // ItemCount return count of items in cache
@@ -207,16 +224,16 @@ type keysWithTS []struct {
 
 // purge records > maxKeys. Has to be called with lock!
 // call with maxKeys 0 will only clear expired entries.
-func (c *LoadingCache) purge(maxKeys int64) {
+// returns evicted items, the caller is expected to notify about them after releasing the lock.
+func (c *LoadingCache) purge(maxKeys int64) (evicted []evictedItem) {
 	kts := keysWithTS{}
 
 	for key, value := range c.data {
 		// ttl eviction
 		if time.Now().After(value.expiresAt) {
 			delete(c.data, key)
-			if c.onEvicted != nil {
-				c.onEvicted(key, value.data)
-			}
+			evicted = append(evicted, evictedItem{key: key, value: value.data})
+			continue // gone already, taking it as a size eviction candidate would waste an eviction
 		}
 
 		// prepare list of keysWithTS for size eviction
@@ -232,18 +249,38 @@ func (c *LoadingCache) purge(maxKeys int64) {
 	size := int64(len(c.data))
 	if len(kts) > 0 {
 		sort.Slice(kts, func(i int, j int) bool { return kts[i].ts.Before(kts[j].ts) })
-		for d := 0; int64(d) < size-maxKeys; d++ {
+		for d := 0; int64(d) < size-maxKeys && d < len(kts); d++ {
 			key := kts[d].key
-			value := c.data[key].data
-			delete(c.data, key)
-			if c.onEvicted != nil {
-				c.onEvicted(key, value)
+			value, ok := c.data[key]
+			if !ok {
+				continue
 			}
+			delete(c.data, key)
+			evicted = append(evicted, evictedItem{key: key, value: value.data})
 		}
+	}
+
+	return evicted
+}
+
+// notifyEvicted calls onEvicted for every removed item, has to be called without the lock
+// as the callback is external code and may call back into the cache
+func (c *LoadingCache) notifyEvicted(evicted []evictedItem) {
+	if c.onEvicted == nil {
+		return
+	}
+	for _, e := range evicted {
+		c.onEvicted(e.key, e.value)
 	}
 }
 
 type cacheItem struct {
 	expiresAt time.Time
-	data      interface{}
+	data      any
+}
+
+// evictedItem is a removed entry, kept until the lock is released to notify about it
+type evictedItem struct {
+	key   string
+	value any
 }

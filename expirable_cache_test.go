@@ -2,7 +2,7 @@ package lcw
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,7 +16,7 @@ func TestExpirableCache(t *testing.T) {
 	require.NoError(t, err)
 	for i := 0; i < 5; i++ {
 		i := i
-		_, e := lc.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
+		_, e := lc.Get(fmt.Sprintf("key-%d", i), func() (any, error) {
 			return fmt.Sprintf("result-%d", i), nil
 		})
 		assert.NoError(t, e)
@@ -27,10 +27,10 @@ func TestExpirableCache(t *testing.T) {
 	assert.Equal(t, int64(5), lc.Stat().Misses)
 
 	keys := lc.Keys()
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	slices.Sort(keys)
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
-	_, e := lc.Get("key-xx", func() (interface{}, error) {
+	_, e := lc.Get("key-xx", func() (any, error) {
 		return "result-xx", nil
 	})
 	assert.NoError(t, e)
@@ -38,14 +38,15 @@ func TestExpirableCache(t *testing.T) {
 	assert.Equal(t, int64(6), lc.Stat().Misses)
 
 	// let key-0 expire, GitHub Actions friendly way
-	for lc.Stat().Keys > 4 {
+	require.Eventually(t, func() bool {
 		lc.backend.DeleteExpired() // enforce DeleteExpired for GitHub earlier than TTL/2
-		time.Sleep(time.Millisecond * 10)
-	}
-	assert.Equal(t, 4, lc.Stat().Keys)
+		return lc.Stat().Keys <= 4 // keys expire in sequence, an exact count races with the next one going
+	}, 5*time.Second, 10*time.Millisecond, "key-0 should expire")
 
-	time.Sleep(210 * time.Millisecond)
-	assert.Equal(t, 0, lc.keys())
+	require.Eventually(t, func() bool {
+		lc.backend.DeleteExpired()
+		return lc.keys() == 0
+	}, 5*time.Second, 10*time.Millisecond, "all keys should expire")
 	assert.Equal(t, []string{}, lc.Keys())
 
 	assert.NoError(t, lc.Close())
@@ -59,7 +60,7 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	// put 5 keys to cache
 	for i := 0; i < 5; i++ {
 		i := i
-		res, e := lc.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
+		res, e := lc.Get(fmt.Sprintf("key-%d", i), func() (any, error) {
 			atomic.AddInt32(&coldCalls, 1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
@@ -69,14 +70,14 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	}
 
 	// check if really cached
-	res, err := lc.Get("key-3", func() (interface{}, error) {
+	res, err := lc.Get("key-3", func() (any, error) {
 		return "result-blah", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-3", res.(string), "should be cached")
 
 	// try to cache after maxKeys reached
-	res, err = lc.Get("key-X", func() (interface{}, error) {
+	res, err = lc.Get("key-X", func() (any, error) {
 		return "result-X", nil
 	})
 	assert.NoError(t, err)
@@ -84,13 +85,13 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	assert.Equal(t, 5, lc.keys())
 
 	// put to cache and make sure it cached
-	res, err = lc.Get("key-Z", func() (interface{}, error) {
+	res, err = lc.Get("key-Z", func() (any, error) {
 		return "result-Z", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result-Z", res.(string))
 
-	res, err = lc.Get("key-Z", func() (interface{}, error) {
+	res, err = lc.Get("key-Z", func() (any, error) {
 		return "result-Zzzz", nil
 	})
 	assert.NoError(t, err)
@@ -130,7 +131,7 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	// add 5 keys to the first node cache
 	for i := 0; i < 5; i++ {
 		i := i
-		_, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (interface{}, error) {
+		_, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (any, error) {
 			return fmt.Sprintf("result-%d", i), nil
 		})
 		assert.NoError(t, e)
@@ -142,7 +143,7 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	assert.Equal(t, int64(5), lc1.Stat().Misses)
 
 	// add key-1 key to the second node
-	_, e := lc2.Get("key-1", func() (interface{}, error) {
+	_, e := lc2.Get("key-1", func() (any, error) {
 		return "result-111", nil
 	})
 	assert.NoError(t, e)
@@ -150,18 +151,18 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	assert.Equal(t, int64(1), lc2.Stat().Misses, lc2.Stat())
 
 	// let key-0 expire, GitHub Actions friendly way
-	for lc1.Stat().Keys > 4 {
+	require.Eventually(t, func() bool {
 		lc1.backend.DeleteExpired() // enforce DeleteExpired for GitHub earlier than TTL/2
 		ps.Wait()                   // wait for onBusEvent goroutines to finish
-		time.Sleep(time.Millisecond * 10)
-	}
-	assert.Equal(t, 4, lc1.Stat().Keys)
+		return lc1.Stat().Keys <= 4 // keys expire in sequence, an exact count races with the next one going
+	}, 5*time.Second, 10*time.Millisecond, "key-0 should expire")
 	assert.Equal(t, 1, lc2.Stat().Keys, "key-1 still in cache2")
 	assert.Equal(t, 1, len(ps.CalledKeys()))
 
-	time.Sleep(210 * time.Millisecond) // let all keys expire
-	ps.Wait()                          // wait for onBusEvent goroutines to finish
+	require.Eventually(t, func() bool {
+		lc1.backend.DeleteExpired()
+		ps.Wait() // wait for onBusEvent goroutines to finish
+		return lc1.Stat().Keys == 0 && lc2.Stat().Keys == 0
+	}, 5*time.Second, 10*time.Millisecond, "all keys should expire")
 	assert.Equal(t, 6, len(ps.CalledKeys()), "6 events, key-1 expired %+v", ps.calledKeys)
-	assert.Equal(t, 0, lc1.Stat().Keys)
-	assert.Equal(t, 0, lc2.Stat().Keys, "key-1 removed from cache2")
 }

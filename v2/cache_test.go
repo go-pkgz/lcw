@@ -3,6 +3,7 @@ package lcw
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -542,7 +543,7 @@ func ExampleLoadingCache_Get() {
 	}
 	fmt.Printf("got %s from cache, stats: %s", v, c.Stat())
 	// Output: cache miss 1
-	// got myval-1 from cache, stats: {hits:1, misses:1, ratio:0.50, keys:1, size:0, errors:0}
+	// got myval-1 from cache, stats: {hits:1, misses:1, ratio:0.50, keys:1, size:7, errors:0}
 }
 
 // ExampleLoadingCache_Delete illustrates cache value eviction and OnEvicted function usage.
@@ -684,4 +685,171 @@ func (m *mockPubSub) Publish(fromID, key string) error {
 		}()
 	}
 	return nil
+}
+
+func TestCache_ConcurrentSameKeyLoad(t *testing.T) {
+	o := NewOpts[sizedString]()
+	caches, teardown := cachesTestList(t, o.MaxKeys(50), o.MaxCacheSize(1000),
+		o.StrToV(func(s string) sizedString { return sizedString(s) }))
+	defer teardown()
+
+	for _, c := range caches {
+		c := c
+		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
+			var coldCalls int32
+			var wg sync.WaitGroup
+			start := make(chan struct{})
+
+			for i := 0; i < 10; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					<-start
+					res, err := c.Get("key", func() (sizedString, error) {
+						atomic.AddInt32(&coldCalls, 1)
+						time.Sleep(10 * time.Millisecond) // make the overlap wide enough
+						return sizedString("result"), nil
+					})
+					assert.NoError(t, err)
+					assert.Equal(t, sizedString("result"), res)
+				}()
+			}
+			close(start)
+			wg.Wait()
+
+			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls), "loaded once for all callers")
+			assert.Equal(t, 1, c.Stat().Keys)
+			assert.Equal(t, int64(1), c.Stat().Misses, "one miss counted")
+		})
+	}
+}
+
+func TestCache_ConcurrentSameKeySizeAccounting(t *testing.T) {
+	// concurrent cold loads used to add the value size once per caller, overflowing maxCacheSize
+	// and leaving the lru eviction loop spinning over an empty cache
+	o := NewOpts[sizedString]()
+	lc, err := NewLruCache(o.MaxKeys(50), o.MaxCacheSize(10))
+	require.NoError(t, err)
+	defer lc.Close()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var wg sync.WaitGroup
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, e := lc.Get("key", func() (sizedString, error) {
+					time.Sleep(10 * time.Millisecond)
+					return sizedString("123456"), nil
+				})
+				assert.NoError(t, e)
+			}()
+		}
+		wg.Wait()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "concurrent loads hang, size accounting overflowed")
+	}
+
+	assert.Equal(t, int64(6), lc.Stat().Size, "size counted once")
+	assert.Equal(t, 1, lc.Stat().Keys)
+}
+
+func TestCache_MaxKeysZeroUnlimited(t *testing.T) {
+	// MaxKeys(0) is documented as unlimited, it used to reject every insert in the expirable cache
+	// and fail the lru cache construction
+	o := NewOpts[string]()
+	ec, err := NewExpirableCache(o.MaxKeys(0))
+	require.NoError(t, err)
+	defer ec.Close()
+
+	lc, err := NewLruCache(o.MaxKeys(0))
+	require.NoError(t, err)
+	defer lc.Close()
+
+	for _, c := range []countedCache[string]{ec, lc} {
+		c := c
+		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
+			var coldCalls int32
+			for i := 0; i < 2; i++ {
+				_, err := c.Get("key", func() (string, error) {
+					atomic.AddInt32(&coldCalls, 1)
+					return "value", nil
+				})
+				require.NoError(t, err)
+			}
+			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls), "second get from cache")
+			assert.Equal(t, 1, c.Stat().Keys)
+
+			for i := 0; i < 100; i++ {
+				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (string, error) {
+					return "value", nil
+				})
+				require.NoError(t, err)
+			}
+			assert.Equal(t, 101, c.Stat().Keys, "no limit applied")
+		})
+	}
+}
+
+func TestCache_LoaderPanicReleasesWaiters(t *testing.T) {
+	// a panicking loader used to release waiters with a zero value and no error,
+	// so they silently treated it as a successful load
+	o := NewOpts[string]()
+	lc, err := NewLruCache(o.MaxKeys(50))
+	require.NoError(t, err)
+	defer lc.Close()
+
+	leaderIn, release := make(chan struct{}), make(chan struct{})
+	var waiterEntered, waiterLoaded int32
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer func() {
+			assert.NotNil(t, recover(), "panic still propagates to the caller that loaded")
+		}()
+		_, _ = lc.Get("key", func() (string, error) {
+			close(leaderIn)
+			<-release // held until the waiter is in, so it joins this load instead of starting its own
+			panic("loader blew up")
+		})
+	}()
+
+	<-leaderIn
+	done := make(chan struct{})
+	var waiterVal string
+	var waiterErr error
+	go func() {
+		defer close(done)
+		atomic.StoreInt32(&waiterEntered, 1)
+		waiterVal, waiterErr = lc.Get("key", func() (string, error) {
+			atomic.StoreInt32(&waiterLoaded, 1)
+			return "should not be called", nil
+		})
+	}()
+
+	require.Eventually(t, func() bool { return atomic.LoadInt32(&waiterEntered) == 1 },
+		5*time.Second, time.Millisecond, "waiter goroutine did not start")
+	runtime.Gosched()
+	time.Sleep(50 * time.Millisecond) // let the waiter reach the load group
+	close(release)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "waiter not released after the loader panicked")
+	}
+	wg.Wait()
+
+	require.Zero(t, atomic.LoadInt32(&waiterLoaded), "waiter joined the in-flight load")
+	require.ErrorIs(t, waiterErr, ErrLoaderPanic, "waiter gets an error, not a silent zero value")
+	assert.Empty(t, waiterVal)
+	assert.Equal(t, 0, lc.Stat().Keys, "nothing cached")
 }

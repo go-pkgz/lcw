@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoadingCacheNoPurge(t *testing.T) {
@@ -30,11 +31,22 @@ func TestLoadingCacheNoPurge(t *testing.T) {
 }
 
 func TestLoadingCacheWithPurge(t *testing.T) {
+	// callbacks run outside the cache lock, the callback state needs its own synchronization
+	var mu sync.Mutex
 	var evicted []string
+	evictedList := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string{}, evicted...)
+	}
 	lc, err := NewLoadingCache(
 		PurgeEvery(time.Millisecond*100),
 		TTL(150*time.Millisecond),
-		OnEvicted(func(key string, value interface{}) { evicted = append(evicted, key, value.(string)) }),
+		OnEvicted(func(key string, value any) {
+			mu.Lock()
+			defer mu.Unlock()
+			evicted = append(evicted, key, value.(string))
+		}),
 	)
 	assert.NoError(t, err)
 	defer lc.Close()
@@ -54,7 +66,7 @@ func TestLoadingCacheWithPurge(t *testing.T) {
 	assert.Nil(t, v)
 
 	assert.Equal(t, 0, lc.ItemCount())
-	assert.Equal(t, []string{"key1", "val1"}, evicted)
+	assert.Equal(t, []string{"key1", "val1"}, evictedList())
 
 	// add new entry
 	lc.Set("key2", "val2")
@@ -65,7 +77,7 @@ func TestLoadingCacheWithPurge(t *testing.T) {
 	// DeleteExpired, key2 deleted
 	lc.DeleteExpired()
 	assert.Equal(t, 0, lc.ItemCount())
-	assert.Equal(t, []string{"key1", "val1", "key2", "val2"}, evicted)
+	assert.Equal(t, []string{"key1", "val1", "key2", "val2"}, evictedList())
 
 	// add third entry
 	lc.Set("key3", "val3")
@@ -74,7 +86,7 @@ func TestLoadingCacheWithPurge(t *testing.T) {
 	// Purge, cache should be clean
 	lc.Purge()
 	assert.Equal(t, 0, lc.ItemCount())
-	assert.Equal(t, []string{"key1", "val1", "key2", "val2", "key3", "val3"}, evicted)
+	assert.Equal(t, []string{"key1", "val1", "key2", "val2", "key3", "val3"}, evictedList())
 }
 
 func TestLoadingCacheWithPurgeEnforcedBySize(t *testing.T) {
@@ -129,7 +141,7 @@ func TestLoadingCacheConcurrency(t *testing.T) {
 
 func TestLoadingCacheInvalidateAndEvict(t *testing.T) {
 	var evicted int
-	lc, err := NewLoadingCache(OnEvicted(func(_ string, _ interface{}) { evicted++ }))
+	lc, err := NewLoadingCache(OnEvicted(func(_ string, _ any) { evicted++ }))
 	assert.NoError(t, err)
 	defer lc.Close()
 
@@ -233,4 +245,103 @@ func TestBucketsLeak(t *testing.T) {
 
 	// Prevents optimization
 	runtime.KeepAlive(lc)
+}
+
+func TestLoadingCache_CallbacksOutsideLock(t *testing.T) {
+	// onEvicted and the invalidation predicate are external code, calling back
+	// into the cache from them used to deadlock on the cache lock
+	withTimeout := func(t *testing.T, name string, fn func()) {
+		t.Helper()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			fn()
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "deadlock", "%s blocked with the cache lock held", name)
+		}
+	}
+
+	t.Run("onEvicted re-enters cache", func(t *testing.T) {
+		var lc *LoadingCache
+		var seen []int
+		var err error
+		lc, err = NewLoadingCache(OnEvicted(func(_ string, _ any) {
+			seen = append(seen, len(lc.Keys())) // re-entrant call, takes the same lock
+		}))
+		require.NoError(t, err)
+		defer lc.Close()
+
+		lc.Set("key1", "val1")
+		lc.Set("key2", "val2")
+
+		withTimeout(t, "Invalidate", func() { lc.Invalidate("key1") })
+		withTimeout(t, "InvalidateFn", func() { lc.InvalidateFn(func(key string) bool { return key == "key2" }) })
+
+		lc.Set("key3", "val3")
+		withTimeout(t, "Purge", func() { lc.Purge() })
+		assert.Equal(t, 3, len(seen), "callback fired for every removed key")
+	})
+
+	t.Run("predicate re-enters cache", func(t *testing.T) {
+		lc, err := NewLoadingCache()
+		require.NoError(t, err)
+		defer lc.Close()
+
+		lc.Set("key1", "val1")
+		lc.Set("key2", "val2")
+
+		withTimeout(t, "InvalidateFn", func() {
+			lc.InvalidateFn(func(key string) bool {
+				_, ok := lc.Peek(key) // re-entrant call from the predicate
+				return ok && key == "key1"
+			})
+		})
+		assert.Equal(t, 1, lc.ItemCount())
+	})
+
+	t.Run("expired items evicted with callback", func(t *testing.T) {
+		var lc *LoadingCache
+		var evicted []string
+		var err error
+		lc, err = NewLoadingCache(TTL(10*time.Millisecond), OnEvicted(func(key string, _ any) {
+			evicted = append(evicted, key)
+			lc.Keys() // re-entrant call
+		}))
+		require.NoError(t, err)
+		defer lc.Close()
+
+		lc.Set("key1", "val1")
+		time.Sleep(50 * time.Millisecond)
+		withTimeout(t, "DeleteExpired", func() { lc.DeleteExpired() })
+		assert.Equal(t, []string{"key1"}, evicted)
+	})
+}
+
+func TestLoadingCache_PurgeWithExpiredAndSizeEviction(t *testing.T) {
+	// an entry expiring in the same purge pass used to be taken as a size eviction
+	// candidate, and skipping it consumed an eviction without removing anything,
+	// leaving the cache above maxKeys.
+	// maxKeys 3 with 5 entries stays below the maxKeys*2 threshold that makes Set purge on its own
+	lc, err := NewLoadingCache(MaxKeys(3), TTL(time.Hour))
+	require.NoError(t, err)
+	defer lc.Close()
+
+	for _, k := range []string{"expired", "key1", "key2", "key3", "key4"} {
+		lc.Set(k, "val")
+	}
+	require.Equal(t, 5, lc.ItemCount(), "no purge from Set yet")
+
+	lc.mu.Lock()
+	lc.data["expired"].expiresAt = time.Now().Add(-time.Hour)
+	evicted := lc.purge(3)
+	got := len(lc.data)
+	_, stillThere := lc.data["expired"]
+	lc.mu.Unlock()
+
+	assert.Equal(t, 3, got, "maxKeys enforced despite the entry expiring in the same pass")
+	assert.False(t, stillThere, "expired entry removed")
+	assert.Len(t, evicted, 2, "one expired plus one size eviction")
 }

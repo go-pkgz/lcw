@@ -8,19 +8,21 @@ import (
 )
 
 type options struct {
-	maxKeys      int
-	maxValueSize int
-	maxKeySize   int
-	maxCacheSize int64
-	ttl          time.Duration
-	onEvicted    func(key string, value interface{})
-	eventBus     eventbus.PubSub
+	maxKeys        int
+	maxValueSize   int
+	maxKeySize     int
+	maxCacheSize   int64
+	ttl            time.Duration
+	onEvicted      func(key string, value any)
+	eventBus       eventbus.PubSub
+	redisKeyPrefix string
 }
 
 // Option func type
 type Option func(o *options) error
 
-// MaxValSize functional option defines the largest value's size allowed to be cached
+// MaxValSize functional option defines the largest value's size allowed to be cached.
+// Applies to values implementing Sizer as well as []byte and string, other types are not limited.
 // By default it is 0, which means unlimited.
 func MaxValSize(maximum int) Option {
 	return func(o *options) error {
@@ -57,6 +59,8 @@ func MaxKeys(maximum int) Option {
 }
 
 // MaxCacheSize functional option defines the total size of cached data.
+// Applies to values implementing Sizer as well as []byte and string, other types are not counted.
+// Not supported by RedisCache, which accepts the option but ignores it.
 // By default it is 0, which means unlimited.
 func MaxCacheSize(maximum int64) Option {
 	return func(o *options) error {
@@ -80,8 +84,21 @@ func TTL(ttl time.Duration) Option {
 	}
 }
 
-// OnEvicted sets callback on invalidation event
-func OnEvicted(fn func(key string, value interface{})) Option {
+// RedisKeyPrefix sets the prefix for all keys stored in redis, making the cache
+// use only its own namespace instead of the whole redis database.
+// Applies to RedisCache only, ignored by other backends. Empty by default, which means
+// the cache assumes exclusive ownership of the selected redis database.
+// Note that with a prefix set and MaxKeys defined, key counting scans the keyspace on every miss.
+func RedisKeyPrefix(prefix string) Option {
+	return func(o *options) error {
+		o.redisKeyPrefix = prefix
+		return nil
+	}
+}
+
+// OnEvicted sets callback on invalidation event.
+// The callback runs outside the cache lock, so it may call back into the same cache.
+func OnEvicted(fn func(key string, value any)) Option {
 	return func(o *options) error {
 		o.onEvicted = fn
 		return nil

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -39,7 +39,7 @@ func TestLruCache_MaxKeys(t *testing.T) {
 	}
 
 	keys := lc.Keys()
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	slices.Sort(keys)
 	assert.EqualValues(t, []string{"key-0", "key-1", "key-2", "key-3", "key-4"}, keys)
 
 	// check if really cached
@@ -300,5 +300,25 @@ func ExampleLruCache() {
 	// <html><body>test response</body></html>
 	// <html><body>test response</body></html>
 	// <html><body>test response</body></html>
-	// {hits:2, misses:1, ratio:0.67, keys:1, size:0, errors:0}
+	// {hits:2, misses:1, ratio:0.67, keys:1, size:39, errors:0}
+}
+
+// ExampleNewLruCache matches the usage example in README.md, keeping it verified.
+func ExampleNewLruCache() {
+	o := NewOpts[int]()
+	cache, err := NewLruCache(o.MaxKeys(500), o.MaxCacheSize(65536), o.MaxValSize(200), o.MaxKeySize(32))
+	if err != nil {
+		panic("failed to create cache")
+	}
+	defer cache.Close()
+
+	val, err := cache.Get("key123", func() (int, error) {
+		return 123, nil // load the value from the actual source here
+	})
+	if err != nil {
+		panic("failed to get data")
+	}
+
+	fmt.Println(val) // cached value
+	// Output: 123
 }

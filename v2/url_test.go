@@ -136,5 +136,5 @@ func TestUrl_NewFailed(t *testing.T) {
 
 	u = "mem://lru?max_keys=xyz"
 	_, err = New[string](u)
-	require.EqualError(t, err, "parse uri options mem://lru?max_keys=xyz: 1 error occurred:\n\t* max_keys query param xyz: strconv.Atoi: parsing \"xyz\": invalid syntax\n\n")
+	require.EqualError(t, err, "parse uri options mem://lru?max_keys=xyz: max_keys query param xyz: strconv.Atoi: parsing \"xyz\": invalid syntax")
 }

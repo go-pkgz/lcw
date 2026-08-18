@@ -99,6 +99,7 @@ go test -race ./... && (cd v2 && go test -race ./...)
 - `MaxKeys(0)` means unlimited, as do all other limits set to 0.
 - Negative limits (max options) rejected
 - Concurrent `Get` calls for the same missing key run the loader once, the rest wait for its result.
+  A loader must not call `Get` for the same key on the same cache, it would wait for itself.
 - By default `RedisCache` assumes exclusive ownership of the selected redis database, i.e. `Purge` flushes it
   and `Keys`, `Stat` and `MaxKeys` count every key in it. Set `RedisKeyPrefix` to keep the cache in its own
   namespace and leave unrelated keys alone.

@@ -75,9 +75,14 @@ func (c *RedisCache) Get(key string, fn func() (any, error)) (data any, err erro
 
 	// concurrent callers for the same key wait for the first load instead of loading on their own
 	return c.loads.do(key, func() (any, error) {
-		if cached, e := c.backend.Get(context.Background(), c.fullKey(key)).Result(); e == nil {
+		cached, cachedErr := c.backend.Get(context.Background(), c.fullKey(key)).Result()
+		switch {
+		case cachedErr == nil:
 			atomic.AddInt64(&c.Hits, 1) // filled by the load we were waiting for
 			return cached, nil
+		case !errors.Is(cachedErr, redis.Nil): // a broken backend is not a miss, same as above
+			atomic.AddInt64(&c.Errors, 1)
+			return cached, cachedErr
 		}
 
 		data, err := fn()

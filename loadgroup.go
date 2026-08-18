@@ -1,9 +1,13 @@
 package lcw
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 )
+
+// ErrLoaderPanic is what callers waiting for a load get when the loader panicked.
+// The panic value itself keeps propagating in the goroutine that ran the loader.
+var ErrLoaderPanic = errors.New("cache loader panic")
 
 // loadGroup makes sure only one load function per key runs at a time.
 // concurrent calls for the same key wait for the in-flight one and share its result,
@@ -43,7 +47,9 @@ func (g *loadGroup) do(key string, fn func() (any, error)) (any, error) {
 	// would without the load coordination.
 	defer func() {
 		if p := recover(); p != nil {
-			call.err = fmt.Errorf("cache loader panic: %v", p)
+			// a fixed error, formatting the panic value here would run arbitrary
+			// code of its Error or String method before the waiters are released
+			call.err = ErrLoaderPanic
 			g.done(key, call)
 			panic(p)
 		}

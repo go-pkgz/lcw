@@ -100,7 +100,8 @@ func (c *RedisCache[V]) Get(key string, fn func() (V, error)) (data V, err error
 			return c.toV(cached), nil
 		case !errors.Is(cachedErr, redis.Nil): // a broken backend is not a miss, same as above
 			atomic.AddInt64(&c.Errors, 1)
-			return c.toV(cached), cachedErr
+			var empty V // cached holds no value here, no point running StrToV over it
+			return empty, cachedErr
 		}
 
 		data, err := fn()

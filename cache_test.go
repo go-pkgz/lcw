@@ -3,6 +3,7 @@ package lcw
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -807,7 +808,8 @@ func TestCache_LoaderPanicReleasesWaiters(t *testing.T) {
 	require.NoError(t, err)
 	defer lc.Close()
 
-	leaderIn := make(chan struct{})
+	leaderIn, release := make(chan struct{}), make(chan struct{})
+	var waiterEntered, waiterLoaded int32
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -818,7 +820,7 @@ func TestCache_LoaderPanicReleasesWaiters(t *testing.T) {
 		}()
 		_, _ = lc.Get("key", func() (any, error) {
 			close(leaderIn)
-			time.Sleep(50 * time.Millisecond) // let the waiter join
+			<-release // held until the waiter is in, so it joins this load instead of starting its own
 			panic("loader blew up")
 		})
 	}()
@@ -829,8 +831,18 @@ func TestCache_LoaderPanicReleasesWaiters(t *testing.T) {
 	var waiterErr error
 	go func() {
 		defer close(done)
-		waiterVal, waiterErr = lc.Get("key", func() (any, error) { return "should not be called", nil })
+		atomic.StoreInt32(&waiterEntered, 1)
+		waiterVal, waiterErr = lc.Get("key", func() (any, error) {
+			atomic.StoreInt32(&waiterLoaded, 1)
+			return "should not be called", nil
+		})
 	}()
+
+	require.Eventually(t, func() bool { return atomic.LoadInt32(&waiterEntered) == 1 },
+		5*time.Second, time.Millisecond, "waiter goroutine did not start")
+	runtime.Gosched()
+	time.Sleep(50 * time.Millisecond) // let the waiter reach the load group
+	close(release)
 
 	select {
 	case <-done:
@@ -839,8 +851,8 @@ func TestCache_LoaderPanicReleasesWaiters(t *testing.T) {
 	}
 	wg.Wait()
 
-	require.Error(t, waiterErr, "waiter gets an error, not a silent zero value")
-	assert.Contains(t, waiterErr.Error(), "cache loader panic")
+	require.Zero(t, atomic.LoadInt32(&waiterLoaded), "waiter joined the in-flight load")
+	require.ErrorIs(t, waiterErr, ErrLoaderPanic, "waiter gets an error, not a silent zero value")
 	assert.Nil(t, waiterVal)
 	assert.Equal(t, 0, lc.Stat().Keys, "nothing cached")
 }

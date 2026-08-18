@@ -2,8 +2,8 @@ name: build
 
 on:
   push:
-    branches:
-    tags:
+    branches: ["**"]
+    tags: ["**"]
   pull_request:
 
 jobs:
@@ -25,21 +25,19 @@ jobs:
 
       - name: build and test
         run: |
-          go get -v
-          go test -timeout=60s -race -covermode=atomic -coverprofile=$GITHUB_WORKSPACE/profile.cov_tmp
-          cat $GITHUB_WORKSPACE/profile.cov_tmp | grep -v "_mock.go" > $GITHUB_WORKSPACE/profile.cov
-          go build -race
+          go test -timeout=120s -race -covermode=atomic -coverprofile="$GITHUB_WORKSPACE/profile.cov_tmp" ./...
+          cat "$GITHUB_WORKSPACE/profile.cov_tmp" | grep -v "_mock.go" > "$GITHUB_WORKSPACE/profile.cov"
+          go build -race ./...
         env:
           TZ: "America/Chicago"
           ENABLE_REDIS_TESTS: "true"
 
       - name: build and test for v2
         run: |
-          go get -v
-          go test -timeout=60s -race -covermode=atomic -coverprofile=$GITHUB_WORKSPACE/profile.cov_tmp
+          go test -timeout=120s -race -covermode=atomic -coverprofile="$GITHUB_WORKSPACE/profile.cov_tmp" ./...
           # combine the coverage files
-          cat $GITHUB_WORKSPACE/profile.cov_tmp | grep -v "_mock.go" | grep -v "mode:" >> $GITHUB_WORKSPACE/profile.cov
-          go build -race
+          cat "$GITHUB_WORKSPACE/profile.cov_tmp" | grep -v "_mock.go" | grep -v "mode:" >> "$GITHUB_WORKSPACE/profile.cov"
+          go build -race ./...
         env:
           TZ: "America/Chicago"
           ENABLE_REDIS_TESTS: "true"
@@ -58,7 +56,7 @@ jobs:
 
       - name: submit coverage
         run: |
-          go install github.com/mattn/goveralls@latest
-          goveralls -service="github" -coverprofile=$GITHUB_WORKSPACE/profile.cov
+          go install github.com/mattn/goveralls@v0.0.12
+          goveralls -service="github" -coverprofile="$GITHUB_WORKSPACE/profile.cov"
         env:
           COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}

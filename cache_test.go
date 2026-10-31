@@ -624,7 +624,7 @@ type countedCache interface {
 }
 
 func cachesTestList(t *testing.T, opts ...Option) (c []countedCache, teardown func()) {
-	var caches []countedCache
+	caches := make([]countedCache, 0, 3)
 	ec, err := NewExpirableCache(opts...)
 	require.NoError(t, err, "can't make exp cache")
 	caches = append(caches, ec)

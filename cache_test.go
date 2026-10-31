@@ -124,13 +124,13 @@ func TestCache_MaxValueSize(t *testing.T) {
 
 			// put too big value to cache and make sure it is not cached
 			res, err = c.Get("key-Big", func() (any, error) {
-				return sizedString("1234567890"), nil
+				return sizedString("12345678901"), nil
 			})
 			if s, ok := res.(string); ok {
 				res = sizedString(s)
 			}
 			assert.NoError(t, err)
-			assert.Equal(t, sizedString("1234567890"), res.(sizedString))
+			assert.Equal(t, sizedString("12345678901"), res.(sizedString))
 
 			res, err = c.Get("key-Big", func() (any, error) {
 				return sizedString("result-big"), nil
@@ -143,10 +143,10 @@ func TestCache_MaxValueSize(t *testing.T) {
 
 			// put too big plain string to cache, sized by length even without Sizer
 			res, err = c.Get("key-Big2", func() (any, error) {
-				return "1234567890", nil
+				return "12345678901", nil
 			})
 			assert.NoError(t, err)
-			assert.Equal(t, "1234567890", res.(string))
+			assert.Equal(t, "12345678901", res.(string))
 
 			res, err = c.Get("key-Big2", func() (any, error) {
 				return "xyz", nil
@@ -229,7 +229,7 @@ func TestCache_MaxCacheSizeParallel(t *testing.T) {
 				}()
 			}
 			wg.Wait()
-			assert.True(t, c.size() < 123 && c.size() >= 0)
+			assert.True(t, c.size() <= 123 && c.size() >= 0)
 			t.Log("size", c.size())
 		})
 	}
@@ -855,4 +855,48 @@ func TestCache_LoaderPanicReleasesWaiters(t *testing.T) {
 	require.ErrorIs(t, waiterErr, ErrLoaderPanic, "waiter gets an error, not a silent zero value")
 	assert.Nil(t, waiterVal)
 	assert.Equal(t, 0, lc.Stat().Keys, "nothing cached")
+}
+
+// TestCache_LimitsInclusive checks that every limit admits a key or value of exactly the configured size
+func TestCache_LimitsInclusive(t *testing.T) {
+	tbl := []struct {
+		name    string
+		opts    []Option
+		entries map[string]sizedString // all of them are expected to be cached
+		noRedis bool                   // redis ignores MaxCacheSize
+	}{
+		{name: "value of exactly MaxValSize", opts: []Option{MaxValSize(10)},
+			entries: map[string]sizedString{"key": "1234567890"}},
+		{name: "key of exactly MaxKeySize", opts: []Option{MaxKeySize(5)},
+			entries: map[string]sizedString{"12345": "value"}},
+		{name: "exactly MaxKeys keys", opts: []Option{MaxKeys(2)},
+			entries: map[string]sizedString{"key1": "value1", "key2": "value2"}},
+		{name: "values filling exactly MaxCacheSize", opts: []Option{MaxCacheSize(16)},
+			entries: map[string]sizedString{"key1": "12345678", "key2": "abcdefgh"}, noRedis: true},
+	}
+
+	for _, tt := range tbl {
+		caches, teardown := cachesTestList(t, tt.opts...)
+		for _, c := range caches {
+			name := strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1)
+			t.Run(tt.name+"/"+name, func(t *testing.T) {
+				if _, ok := c.(*RedisCache); ok && tt.noRedis {
+					t.Skip("not supported by redis")
+				}
+				for k, v := range tt.entries {
+					_, err := c.Get(k, func() (any, error) { return v, nil })
+					require.NoError(t, err)
+				}
+				for k, v := range tt.entries {
+					res, err := c.Get(k, func() (any, error) { return sizedString("not-cached"), nil })
+					require.NoError(t, err)
+					if s, ok := res.(string); ok { // redis returns cached values as strings
+						res = sizedString(s)
+					}
+					assert.Equal(t, v, res, "key %q expected to be cached", k)
+				}
+			})
+		}
+		teardown()
+	}
 }

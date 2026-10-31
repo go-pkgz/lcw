@@ -3,6 +3,7 @@ package lcw
 import (
 	"fmt"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -165,4 +166,55 @@ func TestExpirableCacheWithBus(t *testing.T) {
 		return lc1.Stat().Keys == 0 && lc2.Stat().Keys == 0
 	}, 5*time.Second, 10*time.Millisecond, "all keys should expire")
 	assert.Equal(t, 6, len(ps.CalledKeys()), "6 events, key-1 expired %+v", ps.calledKeys)
+}
+
+func TestExpirableCache_ConcurrentAdmission(t *testing.T) {
+	loadAll := func(t *testing.T, c *ExpirableCache, n int, val func(i int) sizedString) {
+		t.Helper()
+		var arrived, done sync.WaitGroup
+		start := make(chan struct{})
+		arrived.Add(n)
+		done.Add(n)
+		res := make([]any, n)
+		for i := 0; i < n; i++ {
+			go func(i int) {
+				defer done.Done()
+				res[i], _ = c.Get(fmt.Sprintf("key-%d", i), func() (any, error) {
+					arrived.Done()
+					<-start
+					return val(i), nil
+				})
+			}(i)
+		}
+		arrived.Wait()
+		close(start)
+		done.Wait()
+		for i := 0; i < n; i++ {
+			assert.Equal(t, val(i), res[i])
+		}
+	}
+
+	t.Run("max cache size", func(t *testing.T) {
+		for round := 0; round < 200; round++ {
+			c, err := NewExpirableCache(MaxCacheSize(100), MaxKeys(1000))
+			require.NoError(t, err)
+			loadAll(t, c, 100, func(i int) sizedString { return sizedString(fmt.Sprintf("%060d", i)) })
+			require.Equal(t, int64(60), c.size(), "round %d", round)
+			require.Equal(t, 1, c.keys(), "round %d", round)
+			require.NoError(t, c.Close())
+		}
+	})
+
+	t.Run("max keys", func(t *testing.T) {
+		for round := 0; round < 200; round++ {
+			var evicted int32
+			c, err := NewExpirableCache(MaxKeys(5), TTL(time.Hour),
+				OnEvicted(func(string, any) { atomic.AddInt32(&evicted, 1) }))
+			require.NoError(t, err)
+			loadAll(t, c, 50, func(i int) sizedString { return sizedString(fmt.Sprintf("value-%d", i)) })
+			require.Equal(t, 5, c.keys(), "round %d", round)
+			require.Equal(t, int32(0), atomic.LoadInt32(&evicted), "round %d", round)
+			require.NoError(t, c.Close())
+		}
+	})
 }

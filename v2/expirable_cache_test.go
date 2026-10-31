@@ -3,6 +3,7 @@ package lcw
 import (
 	"fmt"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -164,4 +165,57 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	assert.Equal(t, 6, len(ps.CalledKeys()), "6 events, key-1 expired %+v", ps.calledKeys)
 	assert.Equal(t, 0, lc1.Stat().Keys)
 	assert.Equal(t, 0, lc2.Stat().Keys, "key-1 removed from cache2")
+}
+
+func TestExpirableCache_ConcurrentAdmission(t *testing.T) {
+	loadAll := func(t *testing.T, c *ExpirableCache[sizedString], n int, val func(i int) sizedString) {
+		t.Helper()
+		var arrived, done sync.WaitGroup
+		start := make(chan struct{})
+		arrived.Add(n)
+		done.Add(n)
+		res := make([]sizedString, n)
+		for i := 0; i < n; i++ {
+			go func(i int) {
+				defer done.Done()
+				res[i], _ = c.Get(fmt.Sprintf("key-%d", i), func() (sizedString, error) {
+					arrived.Done()
+					<-start
+					return val(i), nil
+				})
+			}(i)
+		}
+		arrived.Wait()
+		close(start)
+		done.Wait()
+		for i := 0; i < n; i++ {
+			assert.Equal(t, val(i), res[i])
+		}
+	}
+
+	t.Run("max cache size", func(t *testing.T) {
+		o := NewOpts[sizedString]()
+		for round := 0; round < 200; round++ {
+			c, err := NewExpirableCache(o.MaxCacheSize(100), o.MaxKeys(1000))
+			require.NoError(t, err)
+			loadAll(t, c, 100, func(i int) sizedString { return sizedString(fmt.Sprintf("%060d", i)) })
+			require.Equal(t, int64(60), c.size(), "round %d", round)
+			require.Equal(t, 1, c.keys(), "round %d", round)
+			require.NoError(t, c.Close())
+		}
+	})
+
+	t.Run("max keys", func(t *testing.T) {
+		o := NewOpts[sizedString]()
+		for round := 0; round < 200; round++ {
+			var evicted int32
+			c, err := NewExpirableCache(o.MaxKeys(5), o.TTL(time.Hour),
+				o.OnEvicted(func(string, sizedString) { atomic.AddInt32(&evicted, 1) }))
+			require.NoError(t, err)
+			loadAll(t, c, 50, func(i int) sizedString { return sizedString(fmt.Sprintf("value-%d", i)) })
+			require.Equal(t, 5, c.keys(), "round %d", round)
+			require.Equal(t, int32(0), atomic.LoadInt32(&evicted), "round %d", round)
+			require.NoError(t, c.Close())
+		}
+	})
 }

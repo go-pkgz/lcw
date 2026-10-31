@@ -97,6 +97,8 @@ go test -race ./... && (cd v2 && go test -race ./...)
   as well as for `[]byte` and `string` values sized by their length. Values of any other type are not limited.
 - `MaxCacheSize` is not supported by `RedisCache`, the option is accepted but ignored and `Stat` reports size 0.
 - `MaxKeys(0)` means unlimited, as do all other limits set to 0.
+- Limits are inclusive: a key of exactly `MaxKeySize` bytes and a value of exactly `MaxValSize` bytes are cached,
+  and a cache holds up to `MaxKeys` keys and `MaxCacheSize` bytes.
 - Negative limits (max options) rejected
 - Concurrent `Get` calls for the same missing key run the loader once, the rest wait for its result.
   A loader must not call `Get` for the same key on the same cache, it would wait for itself.

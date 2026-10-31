@@ -189,7 +189,7 @@ func (c *RedisCache) allowed(key string, data any) bool {
 		return false
 	}
 	if size, ok := sizeOf(data); ok {
-		if c.maxValueSize > 0 && size >= c.maxValueSize {
+		if c.maxValueSize > 0 && size > c.maxValueSize {
 			return false
 		}
 	}

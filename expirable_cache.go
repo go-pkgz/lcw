@@ -94,7 +94,7 @@ func (c *ExpirableCache) Get(key string, fn func() (any, error)) (data any, err 
 		}
 
 		if size, ok := sizeOf(data); ok {
-			if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize)+int64(size) >= c.maxCacheSize {
+			if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize)+int64(size) > c.maxCacheSize {
 				c.backend.DeleteExpired()
 				return data, nil
 			}
@@ -173,7 +173,7 @@ func (c *ExpirableCache) allowed(key string, data any) bool {
 		return false
 	}
 	if size, ok := sizeOf(data); ok {
-		if c.maxValueSize > 0 && size >= c.maxValueSize {
+		if c.maxValueSize > 0 && size > c.maxValueSize {
 			return false
 		}
 	}

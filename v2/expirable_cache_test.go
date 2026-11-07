@@ -125,7 +125,8 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	require.NoError(t, err)
 	defer lc1.Close()
 
-	lc2, err := NewExpirableCache(o.MaxKeys(50), o.TTL(time.Millisecond*5000), o.EventBus(ps))
+	// cache2 keeps its keys for the whole test, so only an event from cache1 can remove key-1
+	lc2, err := NewExpirableCache(o.MaxKeys(50), o.TTL(time.Hour), o.EventBus(ps))
 	require.NoError(t, err)
 	defer lc2.Close()
 
@@ -151,20 +152,19 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	assert.Equal(t, 1, lc2.Stat().Keys)
 	assert.Equal(t, int64(1), lc2.Stat().Misses, lc2.Stat())
 
-	// let key-0 expire
-	for lc1.Stat().Keys > 4 {
+	// let key-0 expire. keys expire 10ms apart, so by the time this sees it more of them may be
+	// gone, and only the first expiry is certain
+	require.Eventually(t, func() bool {
 		ps.Wait() // wait for onBusEvent goroutines to finish
-		time.Sleep(time.Millisecond * 5)
-	}
-	assert.Equal(t, 4, lc1.Stat().Keys)
-	assert.Equal(t, 1, lc2.Stat().Keys, "key-1 still in cache2")
-	assert.Equal(t, 1, len(ps.CalledKeys()))
+		return lc1.Stat().Keys <= 4 && slices.Contains(ps.CalledKeys(), "key-0")
+	}, 5*time.Second, 5*time.Millisecond, "key-0 should expire and be published")
 
-	time.Sleep(210 * time.Millisecond) // let all keys expire
-	ps.Wait()                          // wait for onBusEvent goroutines to finish
-	assert.Equal(t, 6, len(ps.CalledKeys()), "6 events, key-1 expired %+v", ps.calledKeys)
-	assert.Equal(t, 0, lc1.Stat().Keys)
-	assert.Equal(t, 0, lc2.Stat().Keys, "key-1 removed from cache2")
+	require.Eventually(t, func() bool {
+		ps.Wait() // wait for onBusEvent goroutines to finish
+		return lc1.Stat().Keys == 0 && lc2.Stat().Keys == 0 && len(ps.CalledKeys()) >= 6
+	}, 5*time.Second, 5*time.Millisecond, "all keys should expire, key-1 removed from cache2")
+	// five expiries in cache1, and cache2 publishes once more when it removes key-1
+	assert.Equal(t, 6, len(ps.CalledKeys()), "6 events, key-1 expired %+v", ps.CalledKeys())
 }
 
 func TestExpirableCache_ConcurrentAdmission(t *testing.T) {

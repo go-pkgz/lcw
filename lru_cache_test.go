@@ -146,11 +146,11 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "result-X", res.(string))
 
-	assert.Equal(t, 2, len(ps.CalledKeys()), "2 events, key-1 expired")
-
 	// wait for onBusEvent goroutines to finish
 	ps.Wait()
 
+	// cache2 publishes its own event when it removes key-1 on the event from cache1
+	assert.Equal(t, 3, len(ps.CalledKeys()), "3 events, key-1 expired in cache1 and removed from cache2")
 	assert.Equal(t, 0, lc2.backend.Len(), "cache2 removed key-1")
 }
 

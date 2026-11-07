@@ -651,11 +651,16 @@ func (s sizedString) MarshalBinary() (data []byte, err error) {
 	return []byte(s), nil
 }
 
+// mockPubSub delivers each published key to every subscriber in its own goroutine.
+// Wait tracks the deliveries with a condition variable instead of sync.WaitGroup because
+// the cache publishes from its own eviction goroutine, so Publish can run while a test
+// is in Wait, and a WaitGroup must not get Add on a zero counter concurrently with Wait.
 type mockPubSub struct {
 	calledKeys []string
 	fns        []func(fromID, key string)
+	pending    int        // deliveries started and not yet returned
+	idle       *sync.Cond // signaled when pending drops to zero, created on first use
 	sync.Mutex
-	sync.WaitGroup
 }
 
 func (m *mockPubSub) CalledKeys() []string {
@@ -677,14 +682,36 @@ func (m *mockPubSub) Publish(fromID, key string) error {
 	m.calledKeys = append(m.calledKeys, key)
 	for _, fn := range m.fns {
 		fn := fn
-		m.Add(1)
+		m.pending++
 		// run in goroutine to prevent deadlock
 		go func() {
 			fn(fromID, key)
-			m.Done()
+			m.Lock()
+			defer m.Unlock()
+			m.pending--
+			if m.pending == 0 {
+				m.idleCond().Broadcast()
+			}
 		}()
 	}
 	return nil
+}
+
+// Wait blocks until every delivery started so far has returned
+func (m *mockPubSub) Wait() {
+	m.Lock()
+	defer m.Unlock()
+	for m.pending > 0 {
+		m.idleCond().Wait()
+	}
+}
+
+// idleCond returns the condition variable for pending, the caller must hold the lock
+func (m *mockPubSub) idleCond() *sync.Cond {
+	if m.idle == nil {
+		m.idle = sync.NewCond(&m.Mutex)
+	}
+	return m.idle
 }
 
 func TestCache_ConcurrentSameKeyLoad(t *testing.T) {

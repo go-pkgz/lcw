@@ -125,7 +125,8 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	require.NoError(t, err)
 	defer lc1.Close()
 
-	lc2, err := NewExpirableCache(MaxKeys(50), TTL(time.Millisecond*5000), EventBus(ps))
+	// cache2 keeps its keys for the whole test, so only an event from cache1 can remove key-1
+	lc2, err := NewExpirableCache(MaxKeys(50), TTL(time.Hour), EventBus(ps))
 	require.NoError(t, err)
 	defer lc2.Close()
 
@@ -151,21 +152,22 @@ func TestExpirableCacheWithBus(t *testing.T) {
 	assert.Equal(t, 1, lc2.Stat().Keys)
 	assert.Equal(t, int64(1), lc2.Stat().Misses, lc2.Stat())
 
-	// let key-0 expire, GitHub Actions friendly way
+	// let key-0 expire, GitHub Actions friendly way. keys expire 10ms apart, so by the time this
+	// sees it more of them may be gone, and only the first expiry is certain. the expiry is
+	// published after the backend unlocks, so the event can trail the key count
 	require.Eventually(t, func() bool {
 		lc1.backend.DeleteExpired() // enforce DeleteExpired for GitHub earlier than TTL/2
 		ps.Wait()                   // wait for onBusEvent goroutines to finish
-		return lc1.Stat().Keys <= 4 // keys expire in sequence, an exact count races with the next one going
-	}, 5*time.Second, 10*time.Millisecond, "key-0 should expire")
-	assert.Equal(t, 1, lc2.Stat().Keys, "key-1 still in cache2")
-	assert.Equal(t, 1, len(ps.CalledKeys()))
+		return lc1.Stat().Keys <= 4 && slices.Contains(ps.CalledKeys(), "key-0")
+	}, 5*time.Second, 10*time.Millisecond, "key-0 should expire and be published")
 
 	require.Eventually(t, func() bool {
 		lc1.backend.DeleteExpired()
 		ps.Wait() // wait for onBusEvent goroutines to finish
-		return lc1.Stat().Keys == 0 && lc2.Stat().Keys == 0
-	}, 5*time.Second, 10*time.Millisecond, "all keys should expire")
-	assert.Equal(t, 6, len(ps.CalledKeys()), "6 events, key-1 expired %+v", ps.calledKeys)
+		return lc1.Stat().Keys == 0 && lc2.Stat().Keys == 0 && len(ps.CalledKeys()) >= 6
+	}, 5*time.Second, 10*time.Millisecond, "all keys should expire, key-1 removed from cache2")
+	// five expiries in cache1, and cache2 publishes once more when it removes key-1
+	assert.Equal(t, 6, len(ps.CalledKeys()), "6 events, key-1 expired %+v", ps.CalledKeys())
 }
 
 func TestExpirableCache_ConcurrentAdmission(t *testing.T) {

@@ -163,6 +163,9 @@ func TestScope_Key(t *testing.T) {
 		{"key2", "p2", []string{"s11", "s2"}, "p2@@key2@@s11$$s2"},
 		{"key3", "", []string{}, "@@key3@@"},
 		{"key3", "", []string{"xx", "yyy"}, "@@key3@@xx$$yyy"},
+		{"/find?url=https://example.com/a@@b", "p@1", []string{"https://example.com/a@@b", "s$$2", "100%"},
+			"p%401@@/find?url=https://example.com/a%40%40b@@https://example.com/a%40%40b$$s%24%242$$100%25"},
+		{"%40", "", []string{"%24"}, "@@%2540@@%2524"},
 	}
 
 	for _, tt := range tbl {
@@ -364,4 +367,27 @@ func TestScache_RedisBackend(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []byte("value"), res, "hit returns the same bytes")
 	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+}
+
+func TestScache_FlushSeparatorsInKey(t *testing.T) {
+	lru, err := NewLruCache()
+	require.NoError(t, err)
+	lc := NewScache(lru)
+	defer lc.Close()
+
+	// a page URL may contain the separators used inside the key
+	page := "https://example.com/a@@b$$c"
+	_, err = lc.Get(NewKey("site").ID("/find?url="+page).Scopes("site", page), func() ([]byte, error) {
+		return []byte("comments"), nil
+	})
+	require.NoError(t, err)
+	_, err = lc.Get(NewKey("site").ID("/find?url=https://example.com/other").Scopes("site", "https://example.com/other"),
+		func() ([]byte, error) { return []byte("other"), nil })
+	require.NoError(t, err)
+	require.Equal(t, 2, len(lc.lc.Keys()))
+
+	lc.Flush(Flusher("site").Scopes(page))
+	keys := lc.lc.Keys()
+	assert.Equal(t, 1, len(keys), "the key of the page with separators in its URL is flushed")
+	assert.Contains(t, keys, NewKey("site").ID("/find?url=https://example.com/other").Scopes("site", "https://example.com/other").String())
 }

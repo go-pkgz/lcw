@@ -83,8 +83,8 @@ func (o *WorkerOptions[V]) MaxCacheSize(maximum int64) Option[V] {
 	}
 }
 
-// TTL functional option defines duration.
-// Works for ExpirableCache only
+// TTL functional option defines how long an entry is kept.
+// Used by ExpirableCache and RedisCache. TTL of 0 means entries do not expire.
 func (o *WorkerOptions[V]) TTL(ttl time.Duration) Option[V] {
 	return func(o *Workers[V]) error {
 		if ttl < 0 {

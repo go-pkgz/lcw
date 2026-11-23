@@ -3,7 +3,7 @@
 // call provided func to retrieve and store, similar to Guava loading cache.
 // Limits allow max values for key size, number of keys, value size and total size of values in the cache.
 // CacheStat gives general stats on cache performance.
-// 3 flavors of cache provided - NoP (do-nothing cache), ExpirableCache (TTL based), and LruCache
+// 4 flavors of cache provided - NoP (do-nothing cache), ExpirableCache (TTL based), LruCache and RedisCache
 package lcw
 
 import (

@@ -55,14 +55,14 @@ jobs:
         working-directory: v2
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.6
+          version: v2.15.0
 
       - name: golangci-lint for v2
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.6
+          version: v2.15.0
           working-directory: v2
 
       - name: submit coverage

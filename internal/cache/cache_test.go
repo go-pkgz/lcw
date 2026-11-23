@@ -363,3 +363,15 @@ func TestLoadingCache_Remove(t *testing.T) {
 	assert.False(t, ok)
 	assert.Nil(t, v)
 }
+
+func TestLoadingCache_ZeroTTL(t *testing.T) {
+	lc, err := NewLoadingCache(TTL(0))
+	require.NoError(t, err)
+	defer lc.Close()
+
+	lc.Set("key1", "val1")
+	v, ok := lc.Get("key1")
+	assert.True(t, ok, "TTL(0) keeps the entry")
+	assert.Equal(t, "val1", v)
+	assert.Equal(t, noEvictionTTL, lc.ttl)
+}

@@ -34,8 +34,12 @@ func MaxKeys(maximum int) Option {
 
 // TTL functional option defines TTL for all cache entries.
 // By default it is set to 10 years, sane option for expirable cache might be 5 minutes.
+// TTL of 0 means the same as the default, entries do not expire.
 func TTL(ttl time.Duration) Option {
 	return func(lc *LoadingCache) error {
+		if ttl == 0 {
+			ttl = noEvictionTTL
+		}
 		lc.ttl = ttl
 		return nil
 	}

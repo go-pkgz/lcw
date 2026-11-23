@@ -96,7 +96,7 @@ go test -race ./... && (cd v2 && go test -race ./...)
 - All byte-size limits (MaxCacheSize and MaxValSize) work for values implementing the `lcw.Sizer` interface,
   as well as for `[]byte` and `string` values sized by their length. Values of any other type are not limited.
 - `MaxCacheSize` is not supported by `RedisCache`, the option is accepted but ignored and `Stat` reports size 0.
-- `MaxKeys(0)` means unlimited, as do all other limits set to 0.
+- `MaxKeys(0)` means unlimited, as do all other limits set to 0. `TTL(0)` means entries do not expire.
 - Limits are inclusive: a key of exactly `MaxKeySize` bytes and a value of exactly `MaxValSize` bytes are cached,
   and a cache holds up to `MaxKeys` keys and `MaxCacheSize` bytes.
 - `RedisCache` counts keys on the server before each write, so concurrent writers, including callers sharing

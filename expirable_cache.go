@@ -22,7 +22,8 @@ type ExpirableCache struct {
 	storeMu     sync.Mutex
 }
 
-// NewExpirableCache makes expirable LoadingCache implementation, 1000 max keys by default and 5m TTL
+// NewExpirableCache makes expirable LoadingCache implementation, 1000 max keys by default and 5m TTL.
+// TTL(0) makes entries never expire.
 func NewExpirableCache(opts ...Option) (*ExpirableCache, error) {
 	res := ExpirableCache{
 		options: options{

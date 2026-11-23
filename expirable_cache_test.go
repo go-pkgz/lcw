@@ -403,3 +403,21 @@ func waitExpired(t *testing.T, c *ExpirableCache, key string) {
 		"entry of %q did not expire", key)
 	require.Contains(t, c.Keys(), key, "expired entry is still in the backend")
 }
+
+func TestExpirableCache_ZeroTTL(t *testing.T) {
+	c, err := NewExpirableCache(TTL(0))
+	require.NoError(t, err)
+	defer c.Close()
+
+	loads := 0
+	for i := 0; i < 3; i++ {
+		v, err := c.Get("k", func() (any, error) { loads++; return "v", nil })
+		require.NoError(t, err)
+		assert.Equal(t, "v", v)
+	}
+	assert.Equal(t, 1, loads, "TTL(0) keeps the entry, the loader runs once")
+	v, ok := c.Peek("k")
+	assert.True(t, ok)
+	assert.Equal(t, "v", v)
+	assert.Equal(t, int64(2), c.Stat().Hits)
+}

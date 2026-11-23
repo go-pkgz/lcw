@@ -72,8 +72,8 @@ func MaxCacheSize(maximum int64) Option {
 	}
 }
 
-// TTL functional option defines duration.
-// Works for ExpirableCache only
+// TTL functional option defines how long an entry is kept.
+// Used by ExpirableCache and RedisCache. TTL of 0 means entries do not expire.
 func TTL(ttl time.Duration) Option {
 	return func(o *options) error {
 		if ttl < 0 {

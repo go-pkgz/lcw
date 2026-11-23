@@ -2,6 +2,7 @@ package lcw
 
 import (
 	"context"
+	"encoding"
 	"errors"
 	"fmt"
 	"reflect"
@@ -115,13 +116,24 @@ func (c *RedisCache[V]) Get(key string, fn func() (V, error)) (data V, err error
 			return data, nil
 		}
 
-		if _, setErr := c.backend.Set(context.Background(), c.fullKey(key), data, c.ttl).Result(); setErr != nil {
+		if _, setErr := c.backend.Set(context.Background(), c.fullKey(key), c.toRedis(data), c.ttl).Result(); setErr != nil {
 			atomic.AddInt64(&c.Errors, 1)
 			return data, setErr
 		}
 
 		return data, nil
 	})
+}
+
+// toRedis returns the value to hand to the redis client. go-redis writes a string or an
+// encoding.BinaryMarshaler but refuses other named string types, so those are passed as their
+// underlying string, which StrToV turns back into V on read
+func (c *RedisCache[V]) toRedis(data V) any {
+	switch v := any(data).(type) {
+	case string, encoding.BinaryMarshaler:
+		return v
+	}
+	return reflect.ValueOf(data).String() // NewRedisCache accepts only types of string kind
 }
 
 // toV converts the string stored in redis back to V, directly for string and via StrToV for string-based types

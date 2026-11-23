@@ -219,3 +219,207 @@ func TestExpirableCache_ConcurrentAdmission(t *testing.T) {
 		}
 	})
 }
+
+// a Get that misses on an expired key still held by the backend reloads it and stores it again.
+// the backend cleans up an entry within a few milliseconds of its expiry, too soon to reach store
+// through Get reliably, so the tests call store directly, which replaces the entry of the key in
+// the same way whether it has expired or not
+func TestExpirableCache_ReloadExpiredKey(t *testing.T) {
+	t.Run("size of the replaced value is subtracted", func(t *testing.T) {
+		o := NewOpts[string]()
+		var evicted []string
+		c, err := NewExpirableCache(o.TTL(time.Hour),
+			o.OnEvicted(func(_ string, v string) { evicted = append(evicted, v) }))
+		require.NoError(t, err)
+		defer c.Close()
+
+		_, err = c.Get("a", func() (string, error) { return "0123456789", nil })
+		require.NoError(t, err)
+		c.store("a", "abcdefghij")
+		assert.Equal(t, int64(10), c.Stat().Size)
+		assert.Equal(t, 1, c.Stat().Keys)
+		assert.Equal(t, []string{"0123456789"}, evicted, "expired value reported as evicted")
+
+		c.Delete("a")
+		assert.Equal(t, int64(0), c.Stat().Size)
+	})
+
+	o := NewOpts[string]()
+	for name, opt := range map[string]Option[string]{"max keys": o.MaxKeys(1), "max cache size": o.MaxCacheSize(15)} {
+		t.Run("full cache takes the reloaded value, "+name, func(t *testing.T) {
+			c, err := NewExpirableCache(o.TTL(time.Hour), opt)
+			require.NoError(t, err)
+			defer c.Close()
+
+			_, err = c.Get("a", func() (string, error) { return "0123456789", nil })
+			require.NoError(t, err)
+			c.store("a", "abcdefghij")
+			v, ok := c.Peek("a")
+			require.True(t, ok)
+			assert.Equal(t, "abcdefghij", v)
+			assert.Equal(t, 1, c.Stat().Keys)
+			assert.Equal(t, int64(10), c.Stat().Size)
+		})
+	}
+
+	t.Run("other instances keep the key", func(t *testing.T) {
+		ps := &mockPubSub{}
+		a, err := NewExpirableCache(o.TTL(time.Hour), o.EventBus(ps))
+		require.NoError(t, err)
+		defer a.Close()
+		b, err := NewExpirableCache(o.TTL(time.Hour), o.EventBus(ps))
+		require.NoError(t, err)
+		defer b.Close()
+
+		for _, c := range []*ExpirableCache[string]{a, b} {
+			_, err = c.Get("k", func() (string, error) { return "v", nil })
+			require.NoError(t, err)
+		}
+		a.store("k", "v2")
+		ps.Wait()
+
+		assert.Empty(t, ps.CalledKeys(), "replacing the entry of a key publishes nothing")
+		v, ok := a.Peek("k")
+		assert.True(t, ok)
+		assert.Equal(t, "v2", v)
+		v, ok = b.Peek("k")
+		assert.True(t, ok)
+		assert.Equal(t, "v", v)
+
+		a.Delete("k")
+		ps.Wait()
+		assert.Contains(t, ps.CalledKeys(), "k", "other evictions of the key are published")
+	})
+
+	t.Run("a removal of the key racing with store is published", func(t *testing.T) {
+		ps := &mockPubSub{}
+		inDelete, release := make(chan struct{}), make(chan struct{})
+		c, err := NewExpirableCache(o.TTL(time.Hour), o.EventBus(ps), o.OnEvicted(func(_, v string) {
+			if v == "old" { // Delete holds the backend lock while its callback runs
+				close(inDelete)
+				<-release
+			}
+		}))
+		require.NoError(t, err)
+		defer c.Close()
+		var releaseOnce sync.Once
+		unblock := func() { releaseOnce.Do(func() { close(release) }) }
+		defer unblock() // runs before Close, which needs the backend lock Delete holds
+
+		c.store("k", "old")
+		deleted, stored := make(chan struct{}), make(chan struct{})
+		go func() { defer close(deleted); c.Delete("k") }()
+		select {
+		case <-inDelete:
+		case <-deleted:
+			require.FailNow(t, "Delete did not call OnEvicted")
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "Delete did not reach OnEvicted")
+		}
+		go func() { defer close(stored); c.store("k", "new") }()
+		require.Eventually(t, func() bool { return c.storing.Load() != nil }, 5*time.Second, time.Millisecond,
+			"store did not reach the removal")
+		unblock()
+		for _, ch := range []chan struct{}{deleted, stored} {
+			select {
+			case <-ch:
+			case <-time.After(5 * time.Second):
+				require.FailNow(t, "Delete or store did not return")
+			}
+		}
+		ps.Wait()
+
+		assert.Equal(t, []string{"k"}, ps.CalledKeys(), "Delete of the key is published once")
+		v, ok := c.Peek("k")
+		assert.True(t, ok)
+		assert.Equal(t, "new", v)
+	})
+
+	// Purge holds the backend lock for all its callbacks, so a callback that runs after the one for "k"
+	// can mark the cache closed while store still waits to remove "k". Purge visits keys in map order,
+	// so an attempt where "k" comes last is repeated.
+	t.Run("a removal racing with store is published after Close", func(t *testing.T) {
+		for attempt := 0; attempt < 50; attempt++ {
+			published, ok := purgeRacingStore(t)
+			if !ok {
+				continue // "k" was purged last, nothing ran after it
+			}
+			assert.Equal(t, 1, published, "Purge of the key is published once")
+			return
+		}
+		require.FailNow(t, "the key was purged last in every attempt")
+	})
+}
+
+// purgeRacingStore purges a cache holding "k" and four other keys while store of "k" waits for the backend
+// lock, and marks the cache closed in the first callback after the one for "k". It returns how many times
+// "k" was published, and false when "k" was purged last.
+func purgeRacingStore(t *testing.T) (published int, ok bool) {
+	t.Helper()
+	ps := &mockPubSub{}
+	o := NewOpts[string]()
+	var c *ExpirableCache[string]
+	first, sawKey, closedAfterKey := true, false, false
+	var stored chan struct{}
+	var err error
+	c, err = NewExpirableCache(o.TTL(time.Hour), o.EventBus(ps), o.OnEvicted(func(key, _ string) {
+		if first { // Purge holds the backend lock from here on; let store reach its removal
+			first = false
+			stored = make(chan struct{})
+			go func() { defer close(stored); c.store("k", "new") }()
+			require.Eventually(t, func() bool { return c.storing.Load() != nil }, 5*time.Second, time.Millisecond,
+				"store did not reach the removal")
+		}
+		if sawKey && !closedAfterKey { // the callback for "k" took the marker off
+			c.closed.Store(true)
+			closedAfterKey = true
+		}
+		if key == "k" {
+			sawKey = true
+		}
+	}))
+	require.NoError(t, err)
+	for _, k := range []string{"k", "a", "b", "c", "d"} {
+		c.store(k, "old")
+	}
+
+	c.Purge()
+	select {
+	case <-stored:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "store did not return")
+	}
+	ps.Wait()
+	for _, k := range ps.CalledKeys() {
+		if k == "k" {
+			published++
+		}
+	}
+	return published, closedAfterKey
+}
+
+func TestExpirableCache_CloseKeepsPeers(t *testing.T) {
+	ps := &mockPubSub{}
+	o := NewOpts[string]()
+	var evicted []string
+	a, err := NewExpirableCache(o.TTL(time.Hour), o.EventBus(ps),
+		o.OnEvicted(func(key, _ string) { evicted = append(evicted, key) }))
+	require.NoError(t, err)
+	b, err := NewExpirableCache(o.TTL(time.Hour), o.EventBus(ps))
+	require.NoError(t, err)
+	defer b.Close()
+
+	for _, c := range []*ExpirableCache[string]{a, b} {
+		_, err = c.Get("k", func() (string, error) { return "v", nil })
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, a.Close())
+	ps.Wait()
+	assert.Equal(t, []string{"k"}, evicted, "OnEvicted still called on Close")
+	assert.Equal(t, 0, a.Stat().Keys)
+	assert.Empty(t, ps.CalledKeys(), "nothing published on Close")
+	v, ok := b.Peek("k")
+	assert.True(t, ok, "the other instance keeps its key")
+	assert.Equal(t, "v", v)
+}

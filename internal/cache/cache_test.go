@@ -345,3 +345,21 @@ func TestLoadingCache_PurgeWithExpiredAndSizeEviction(t *testing.T) {
 	assert.False(t, stillThere, "expired entry removed")
 	assert.Len(t, evicted, 2, "one expired plus one size eviction")
 }
+
+func TestLoadingCache_Remove(t *testing.T) {
+	var evicted []string
+	lc, err := NewLoadingCache(TTL(time.Hour), OnEvicted(func(key string, _ any) { evicted = append(evicted, key) }))
+	require.NoError(t, err)
+	defer lc.Close()
+
+	lc.Set("key1", "val1")
+	v, ok := lc.Remove("key1")
+	assert.True(t, ok)
+	assert.Equal(t, "val1", v)
+	assert.Equal(t, 0, lc.ItemCount())
+	assert.Empty(t, evicted, "Remove does not call OnEvicted")
+
+	v, ok = lc.Remove("key1")
+	assert.False(t, ok)
+	assert.Nil(t, v)
+}

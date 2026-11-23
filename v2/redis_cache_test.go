@@ -219,6 +219,31 @@ func TestRedisCache_PeekStringBasedType(t *testing.T) {
 	assert.Equal(t, sizedString("value"), res)
 }
 
+// plainString is a named string type without MarshalBinary, which go-redis can't marshal by itself
+type plainString string
+
+func TestRedisCache_NamedStringType(t *testing.T) {
+	server := newTestRedisServer()
+	defer server.Close()
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	defer client.Close()
+
+	o := NewOpts[plainString]()
+	rc, err := NewRedisCache(client, o.StrToV(func(s string) plainString { return plainString(s) }))
+	require.NoError(t, err)
+
+	loads := 0
+	for i := 0; i < 3; i++ {
+		res, err := rc.Get("key", func() (plainString, error) { loads++; return "value", nil })
+		require.NoError(t, err)
+		assert.Equal(t, plainString("value"), res)
+	}
+	assert.Equal(t, 1, loads, "loaded once, then served from redis")
+	assert.Equal(t, []string{"key"}, rc.Keys())
+	assert.Equal(t, int64(2), rc.Stat().Hits)
+	assert.Equal(t, int64(0), rc.Stat().Errors)
+}
+
 func TestRedisCache_KeyPrefix(t *testing.T) {
 	server := newTestRedisServer()
 	defer server.Close()

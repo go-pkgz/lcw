@@ -185,6 +185,19 @@ func (c *LoadingCache) Purge() {
 	c.notifyEvicted(evicted)
 }
 
+// Remove deletes the key and returns its value, expired or not.
+// Unlike Invalidate it does not call OnEvicted, the caller handles the removed value.
+func (c *LoadingCache) Remove(key string) (value any, removed bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	item, ok := c.data[key]
+	if !ok {
+		return nil, false
+	}
+	delete(c.data, key)
+	return item.data, true
+}
+
 // DeleteExpired clears cache of expired items
 func (c *LoadingCache) DeleteExpired() {
 	c.mu.Lock()

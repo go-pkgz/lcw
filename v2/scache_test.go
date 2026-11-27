@@ -135,6 +135,77 @@ func TestScache_Flush(t *testing.T) {
 	}
 }
 
+// a value loaded while a matching Flush runs may predate the change the Flush is for, so it must not stay cached
+func TestScache_FlushDuringLoad(t *testing.T) {
+	lru, err := NewLruCache[[]byte]()
+	require.NoError(t, err)
+	lc := NewScache[[]byte](lru)
+	key := NewKey("site").ID("post1").Scopes("s1")
+
+	// load key while flush runs, and return what the Get got
+	loadDuring := func(flush FlusherRequest) []byte {
+		started, release := make(chan struct{}), make(chan struct{})
+		done := make(chan []byte)
+		go func() {
+			res, err := lc.Get(key, func() ([]byte, error) {
+				close(started)
+				<-release
+				return []byte("before"), nil
+			})
+			assert.NoError(t, err)
+			done <- res
+		}()
+		<-started
+		lc.Flush(flush)
+		close(release)
+		return <-done
+	}
+	reload := func() []byte {
+		res, err := lc.Get(key, func() ([]byte, error) { return []byte("after"), nil })
+		require.NoError(t, err)
+		return res
+	}
+
+	assert.Equal(t, "before", string(loadDuring(Flusher("site").Scopes("s1"))), "the caller gets what it loaded")
+	assert.Equal(t, "after", string(reload()), "the value loaded during the flush was not kept")
+
+	lc.Flush(Flusher("site"))
+	assert.Equal(t, "before", string(loadDuring(Flusher("site"))), "the caller gets what it loaded")
+	assert.Equal(t, "after", string(reload()), "a flush of the whole partition drops it too")
+
+	for _, flush := range []FlusherRequest{Flusher("site").Scopes("s2"), Flusher("other").Scopes("s1")} {
+		lc.Flush(Flusher("site"))
+		assert.Equal(t, "before", string(loadDuring(flush)))
+		assert.Equal(t, "before", string(reload()), "a flush of other keys keeps the value, %+v", flush)
+	}
+}
+
+// the record of a load in progress is gone once the load ends, whether it succeeds, fails or panics
+func TestScache_LoadRecordReleased(t *testing.T) {
+	lru, err := NewLruCache[[]byte]()
+	require.NoError(t, err)
+	lc := NewScache[[]byte](lru)
+	key := NewKey("site").ID("post1")
+	records := func() int {
+		lc.mu.Lock()
+		defer lc.mu.Unlock()
+		return len(lc.loads)
+	}
+
+	_, err = lc.Get(key, func() ([]byte, error) { return nil, fmt.Errorf("failed") })
+	require.EqualError(t, err, "failed")
+	assert.Equal(t, 0, records(), "after an error")
+
+	assert.Panics(t, func() {
+		_, _ = lc.Get(key, func() ([]byte, error) { panic("loader") })
+	})
+	assert.Equal(t, 0, records(), "after a panic")
+
+	_, err = lc.Get(key, func() ([]byte, error) { return []byte("value"), nil })
+	require.NoError(t, err)
+	assert.Equal(t, 0, records(), "after a load")
+}
+
 func TestScache_FlushFailed(t *testing.T) {
 	lru, err := NewLruCache[[]byte]()
 	require.NoError(t, err)

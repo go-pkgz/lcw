@@ -4,23 +4,38 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 )
 
 // Scache wraps LoadingCache with partitions (sub-system), and scopes.
 // Simplified interface with just 4 funcs - Get, Flush, Stats and Close
 type Scache struct {
 	lc LoadingCache
+
+	mu    sync.Mutex
+	loads map[*scacheLoad]struct{} // loads in progress, for Flush to mark
+}
+
+// scacheLoad is a load in progress; flushed is set by a Flush matching its key while the load runs
+type scacheLoad struct {
+	key     string
+	flushed bool
 }
 
 // NewScache creates Scache on top of LoadingCache
 func NewScache(lc LoadingCache) *Scache {
-	return &Scache{lc: lc}
+	return &Scache{lc: lc, loads: map[*scacheLoad]struct{}{}}
 }
 
-// Get retrieves a key from underlying backend
+// Get retrieves a key from underlying backend.
+// A value loaded while a Flush matching its key ran may have been read before the change the Flush is for,
+// so it is returned to this caller and removed from the cache instead of being kept until the next Flush.
 func (m *Scache) Get(key Key, fn func() ([]byte, error)) (data []byte, err error) {
 	keyStr := key.String()
+	var ld *scacheLoad
+	defer func() { m.endLoad(ld) }()
 	val, err := m.lc.Get(keyStr, func() (value any, e error) {
+		ld = m.startLoad(keyStr)
 		return fn()
 	})
 	// backends store what the loader returned, but RedisCache reads values back as strings
@@ -72,10 +87,43 @@ func (m *Scache) Flush(req FlusherRequest) {
 		return false
 	}
 
+	// marked first, so a load that ends after this point drops its value even if it is stored after the keys
+	// below were removed
+	m.mu.Lock()
+	for ld := range m.loads {
+		if inScope(ld.key) {
+			ld.flushed = true
+		}
+	}
+	m.mu.Unlock()
+
 	for _, k := range m.lc.Keys() {
 		if inScope(k) {
 			m.lc.Delete(k) // Keys() returns copy of cache's key, safe to remove directly
 		}
+	}
+}
+
+func (m *Scache) startLoad(key string) *scacheLoad {
+	ld := &scacheLoad{key: key}
+	m.mu.Lock()
+	m.loads[ld] = struct{}{}
+	m.mu.Unlock()
+	return ld
+}
+
+// endLoad forgets a load once the backend has stored its value, and removes the value if a Flush marked it.
+// ld is nil when the value came from the cache or from another caller's load.
+func (m *Scache) endLoad(ld *scacheLoad) {
+	if ld == nil {
+		return
+	}
+	m.mu.Lock()
+	delete(m.loads, ld)
+	flushed := ld.flushed
+	m.mu.Unlock()
+	if flushed {
+		m.lc.Delete(ld.key)
 	}
 }
 

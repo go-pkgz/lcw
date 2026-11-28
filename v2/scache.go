@@ -8,7 +8,7 @@ import (
 )
 
 // Scache wraps LoadingCache with partitions (sub-system), and scopes.
-// Simplified interface with just 4 funcs - Get, Flush, Stats and Close
+// Simplified interface with just 4 funcs - Get, Flush, Stat and Close
 type Scache[V any] struct {
 	lc LoadingCache[V]
 

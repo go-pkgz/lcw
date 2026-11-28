@@ -16,37 +16,37 @@ import (
 )
 
 func TestNop_Get(t *testing.T) {
-	var coldCalls int32
+	var coldCalls atomic.Int32
 	var c LoadingCache[string] = NewNopCache[string]()
 	res, err := c.Get("key1", func() (string, error) {
-		atomic.AddInt32(&coldCalls, 1)
+		coldCalls.Add(1)
 		return "result", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result", res)
-	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+	assert.Equal(t, int32(1), coldCalls.Load())
 
 	res, err = c.Get("key1", func() (string, error) {
-		atomic.AddInt32(&coldCalls, 1)
+		coldCalls.Add(1)
 		return "result2", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result2", res)
-	assert.Equal(t, int32(2), atomic.LoadInt32(&coldCalls))
+	assert.Equal(t, int32(2), coldCalls.Load())
 
 	assert.Equal(t, CacheStat{}, c.Stat())
 }
 
 func TestNop_Peek(t *testing.T) {
-	var coldCalls int32
+	var coldCalls atomic.Int32
 	c := NewNopCache[string]()
 	res, err := c.Get("key1", func() (string, error) {
-		atomic.AddInt32(&coldCalls, 1)
+		coldCalls.Add(1)
 		return "result", nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result", res)
-	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+	assert.Equal(t, int32(1), coldCalls.Load())
 
 	_, ok := c.Peek("key1")
 	assert.False(t, ok)
@@ -64,37 +64,37 @@ func TestCache_Get(t *testing.T) {
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
-			var coldCalls int32
+			var coldCalls atomic.Int32
 			res, err := c.Get("key", func() (string, error) {
-				atomic.AddInt32(&coldCalls, 1)
+				coldCalls.Add(1)
 				return "result", nil
 			})
 			assert.NoError(t, err)
 			assert.Equal(t, "result", res)
-			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+			assert.Equal(t, int32(1), coldCalls.Load())
 
 			res, err = c.Get("key", func() (string, error) {
-				atomic.AddInt32(&coldCalls, 1)
+				coldCalls.Add(1)
 				return "result2", nil
 			})
 
 			assert.NoError(t, err)
 			assert.Equal(t, "result", res)
-			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls), "cache hit")
+			assert.Equal(t, int32(1), coldCalls.Load(), "cache hit")
 
 			_, err = c.Get("key-2", func() (string, error) {
-				atomic.AddInt32(&coldCalls, 1)
+				coldCalls.Add(1)
 				return "result2", fmt.Errorf("some error")
 			})
 			assert.Error(t, err)
-			assert.Equal(t, int32(2), atomic.LoadInt32(&coldCalls), "cache hit")
+			assert.Equal(t, int32(2), coldCalls.Load(), "cache hit")
 
 			_, err = c.Get("key-2", func() (string, error) {
-				atomic.AddInt32(&coldCalls, 1)
+				coldCalls.Add(1)
 				return "result2", fmt.Errorf("some error")
 			})
 			assert.Error(t, err)
-			assert.Equal(t, int32(3), atomic.LoadInt32(&coldCalls), "cache hit")
+			assert.Equal(t, int32(3), coldCalls.Load(), "cache hit")
 		})
 	}
 }
@@ -266,14 +266,14 @@ func TestCache_Peek(t *testing.T) {
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
-			var coldCalls int32
+			var coldCalls atomic.Int32
 			res, err := c.Get("key", func() (string, error) {
-				atomic.AddInt32(&coldCalls, 1)
+				coldCalls.Add(1)
 				return "result", nil
 			})
 			assert.NoError(t, err)
 			assert.Equal(t, "result", res)
-			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+			assert.Equal(t, int32(1), coldCalls.Load())
 
 			r, ok := c.Peek("key")
 			assert.True(t, ok)
@@ -289,7 +289,7 @@ func TestLruCache_ParallelHits(t *testing.T) {
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
-			var coldCalls int32
+			var coldCalls atomic.Int32
 
 			res, err := c.Get("key", func() (string, error) {
 				return "value", nil
@@ -304,7 +304,7 @@ func TestLruCache_ParallelHits(t *testing.T) {
 				go func() {
 					defer wg.Done()
 					res, err := c.Get("key", func() (string, error) {
-						atomic.AddInt32(&coldCalls, 1)
+						coldCalls.Add(1)
 						return fmt.Sprintf("result-%d", i), nil
 					})
 					require.NoError(t, err)
@@ -312,7 +312,7 @@ func TestLruCache_ParallelHits(t *testing.T) {
 				}()
 			}
 			wg.Wait()
-			assert.Equal(t, int32(0), atomic.LoadInt32(&coldCalls))
+			assert.Equal(t, int32(0), coldCalls.Load())
 		})
 	}
 }
@@ -324,17 +324,17 @@ func TestCache_Purge(t *testing.T) {
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
-			var coldCalls int32
+			var coldCalls atomic.Int32
 			// fill cache
 			for i := 0; i < 1000; i++ {
 				i := i
 				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (string, error) {
-					atomic.AddInt32(&coldCalls, 1)
+					coldCalls.Add(1)
 					return fmt.Sprintf("result-%d", i), nil
 				})
 				require.NoError(t, err)
 			}
-			assert.Equal(t, int32(1000), atomic.LoadInt32(&coldCalls))
+			assert.Equal(t, int32(1000), coldCalls.Load())
 			assert.Equal(t, 1000, c.keys())
 
 			c.Purge()
@@ -350,18 +350,18 @@ func TestCache_Invalidate(t *testing.T) {
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
-			var coldCalls int32
+			var coldCalls atomic.Int32
 
 			// fill cache
 			for i := 0; i < 1000; i++ {
 				i := i
 				_, err := c.Get(fmt.Sprintf("key-%d", i), func() (string, error) {
-					atomic.AddInt32(&coldCalls, 1)
+					coldCalls.Add(1)
 					return fmt.Sprintf("result-%d", i), nil
 				})
 				require.NoError(t, err)
 			}
-			assert.Equal(t, int32(1000), atomic.LoadInt32(&coldCalls))
+			assert.Equal(t, int32(1000), coldCalls.Load())
 			assert.Equal(t, 1000, c.keys())
 
 			c.Invalidate(func(key string) bool {
@@ -370,14 +370,14 @@ func TestCache_Invalidate(t *testing.T) {
 
 			assert.Equal(t, 900, c.keys(), "100 keys removed")
 			res, err := c.Get("key-1", func() (string, error) {
-				atomic.AddInt32(&coldCalls, 1)
+				coldCalls.Add(1)
 				return "result-xxx", nil
 			})
 			require.NoError(t, err)
 			assert.Equal(t, "result-1", res, "from the cache")
 
 			res, err = c.Get("key-10", func() (string, error) {
-				atomic.AddInt32(&coldCalls, 1)
+				coldCalls.Add(1)
 				return "result-xxx", nil
 			})
 			require.NoError(t, err)
@@ -723,7 +723,7 @@ func TestCache_ConcurrentSameKeyLoad(t *testing.T) {
 	for _, c := range caches {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
-			var coldCalls int32
+			var coldCalls atomic.Int32
 			var wg sync.WaitGroup
 			start := make(chan struct{})
 
@@ -733,7 +733,7 @@ func TestCache_ConcurrentSameKeyLoad(t *testing.T) {
 					defer wg.Done()
 					<-start
 					res, err := c.Get("key", func() (sizedString, error) {
-						atomic.AddInt32(&coldCalls, 1)
+						coldCalls.Add(1)
 						time.Sleep(10 * time.Millisecond) // make the overlap wide enough
 						return sizedString("result"), nil
 					})
@@ -744,7 +744,7 @@ func TestCache_ConcurrentSameKeyLoad(t *testing.T) {
 			close(start)
 			wg.Wait()
 
-			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls), "loaded once for all callers")
+			assert.Equal(t, int32(1), coldCalls.Load(), "loaded once for all callers")
 			assert.Equal(t, 1, c.Stat().Keys)
 			assert.Equal(t, int64(1), c.Stat().Misses, "one miss counted")
 		})
@@ -802,15 +802,15 @@ func TestCache_MaxKeysZeroUnlimited(t *testing.T) {
 	for _, c := range []countedCache[string]{ec, lc} {
 		c := c
 		t.Run(strings.Replace(fmt.Sprintf("%T", c), "*lcw.", "", 1), func(t *testing.T) {
-			var coldCalls int32
+			var coldCalls atomic.Int32
 			for i := 0; i < 2; i++ {
 				_, err := c.Get("key", func() (string, error) {
-					atomic.AddInt32(&coldCalls, 1)
+					coldCalls.Add(1)
 					return "value", nil
 				})
 				require.NoError(t, err)
 			}
-			assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls), "second get from cache")
+			assert.Equal(t, int32(1), coldCalls.Load(), "second get from cache")
 			assert.Equal(t, 1, c.Stat().Keys)
 
 			for i := 0; i < 100; i++ {

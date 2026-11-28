@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-pkgz/lcw/internal/cache"
 )
 
 func TestExpirableCache(t *testing.T) {
@@ -54,7 +56,7 @@ func TestExpirableCache(t *testing.T) {
 }
 
 func TestExpirableCache_MaxKeys(t *testing.T) {
-	var coldCalls int32
+	var coldCalls atomic.Int32
 	lc, err := NewExpirableCache(MaxKeys(5), MaxValSize(10))
 	require.NoError(t, err)
 
@@ -62,12 +64,12 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		i := i
 		res, e := lc.Get(fmt.Sprintf("key-%d", i), func() (any, error) {
-			atomic.AddInt32(&coldCalls, 1)
+			coldCalls.Add(1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
 		assert.NoError(t, e)
 		assert.Equal(t, fmt.Sprintf("result-%d", i), res.(string))
-		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
+		assert.Equal(t, int32(i+1), coldCalls.Load())
 	}
 
 	// check if really cached
@@ -209,14 +211,213 @@ func TestExpirableCache_ConcurrentAdmission(t *testing.T) {
 
 	t.Run("max keys", func(t *testing.T) {
 		for round := 0; round < 200; round++ {
-			var evicted int32
+			var evicted atomic.Int32
 			c, err := NewExpirableCache(MaxKeys(5), TTL(time.Hour),
-				OnEvicted(func(string, any) { atomic.AddInt32(&evicted, 1) }))
+				OnEvicted(func(string, any) { evicted.Add(1) }))
 			require.NoError(t, err)
 			loadAll(t, c, 50, func(i int) sizedString { return sizedString(fmt.Sprintf("value-%d", i)) })
 			require.Equal(t, 5, c.keys(), "round %d", round)
-			require.Equal(t, int32(0), atomic.LoadInt32(&evicted), "round %d", round)
+			require.Equal(t, int32(0), evicted.Load(), "round %d", round)
 			require.NoError(t, c.Close())
 		}
 	})
+}
+
+// a Get that misses on an expired key still held by the backend reloads it and stores it again
+func TestExpirableCache_ReloadExpiredKey(t *testing.T) {
+	t.Run("size of the expired value is subtracted", func(t *testing.T) {
+		var evicted []any
+		c, err := NewExpirableCache(OnEvicted(func(_ string, v any) { evicted = append(evicted, v) }))
+		require.NoError(t, err)
+		expireSoon(t, c)
+
+		_, err = c.Get("a", func() (any, error) { return "0123456789", nil })
+		require.NoError(t, err)
+		waitExpired(t, c, "a")
+		v, err := c.Get("a", func() (any, error) { return "abcdefghij", nil })
+		require.NoError(t, err)
+		assert.Equal(t, "abcdefghij", v)
+		assert.Equal(t, int64(10), c.Stat().Size)
+		assert.Equal(t, 1, c.Stat().Keys)
+		assert.Equal(t, []any{"0123456789"}, evicted, "expired value reported as evicted")
+
+		c.Delete("a")
+		assert.Equal(t, int64(0), c.Stat().Size)
+	})
+
+	for name, opt := range map[string]Option{"max keys": MaxKeys(1), "max cache size": MaxCacheSize(15)} {
+		t.Run("full cache takes the reloaded value, "+name, func(t *testing.T) {
+			c, err := NewExpirableCache(opt)
+			require.NoError(t, err)
+			expireSoon(t, c)
+
+			_, err = c.Get("a", func() (any, error) { return "0123456789", nil })
+			require.NoError(t, err)
+			waitExpired(t, c, "a")
+			_, err = c.Get("a", func() (any, error) { return "abcdefghij", nil })
+			require.NoError(t, err)
+			v, ok := c.Peek("a")
+			require.True(t, ok)
+			assert.Equal(t, "abcdefghij", v)
+			assert.Equal(t, 1, c.Stat().Keys)
+			assert.Equal(t, int64(10), c.Stat().Size)
+		})
+	}
+
+	t.Run("OnEvicted may get the same key", func(t *testing.T) {
+		var c *ExpirableCache
+		var err error
+		var inner []any
+		c, err = NewExpirableCache(OnEvicted(func(key string, _ any) {
+			v, e := c.Get(key, func() (any, error) { return "from OnEvicted", nil })
+			assert.NoError(t, e)
+			inner = append(inner, v)
+		}))
+		require.NoError(t, err)
+		expireSoon(t, c)
+
+		_, err = c.Get("a", func() (any, error) { return "old", nil })
+		require.NoError(t, err)
+		waitExpired(t, c, "a")
+		done := make(chan any)
+		go func() {
+			v, e := c.Get("a", func() (any, error) { return "new", nil })
+			assert.NoError(t, e)
+			done <- v
+		}()
+		select {
+		case v := <-done:
+			assert.Equal(t, "new", v)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "Get of a key whose OnEvicted gets the same key did not return")
+		}
+		assert.Equal(t, []any{"new"}, inner, "OnEvicted runs after the new value is stored")
+	})
+
+	t.Run("OnEvicted may load the same key", func(t *testing.T) {
+		var c *ExpirableCache
+		var err error
+		c, err = NewExpirableCache(MaxValSize(5), OnEvicted(func(key string, _ any) {
+			_, e := c.Get(key, func() (any, error) { return "abc", nil })
+			assert.NoError(t, e)
+		}))
+		require.NoError(t, err)
+		expireSoon(t, c)
+
+		_, err = c.Get("a", func() (any, error) { return "old", nil })
+		require.NoError(t, err)
+		waitExpired(t, c, "a")
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_, e := c.Get("a", func() (any, error) { return "too long", nil }) // not cached, over MaxValSize
+			assert.NoError(t, e)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "Get of a key whose OnEvicted loads the same key did not return")
+		}
+		v, ok := c.Peek("a")
+		assert.True(t, ok)
+		assert.Equal(t, "abc", v, "the value OnEvicted loaded is cached")
+	})
+
+	t.Run("OnEvicted of an entry removed for room may get the key being loaded", func(t *testing.T) {
+		var c *ExpirableCache
+		var err error
+		c, err = NewExpirableCache(MaxKeys(2), MaxCacheSize(2), OnEvicted(func(key string, _ any) {
+			if key == "item" {
+				_, e := c.Get("index", func() (any, error) { return "x", nil })
+				assert.NoError(t, e)
+			}
+		}))
+		require.NoError(t, err)
+		expireSoon(t, c)
+
+		for _, k := range []string{"index", "item"} {
+			_, err = c.Get(k, func() (any, error) { return "1", nil })
+			require.NoError(t, err)
+		}
+		waitExpired(t, c, "index")
+		waitExpired(t, c, "item")
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_, e := c.Get("index", func() (any, error) { return "22", nil }) // over MaxCacheSize with item in place
+			assert.NoError(t, e)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "Get that makes room for its value did not return")
+		}
+		v, ok := c.Peek("index")
+		assert.True(t, ok)
+		assert.Equal(t, "x", v, "the value OnEvicted loaded is cached")
+		assert.Equal(t, int64(1), c.Stat().Size)
+	})
+
+	t.Run("other instances keep the key", func(t *testing.T) {
+		ps := &mockPubSub{}
+		a, err := NewExpirableCache(EventBus(ps))
+		require.NoError(t, err)
+		expireSoon(t, a)
+		b, err := NewExpirableCache(EventBus(ps))
+		require.NoError(t, err)
+		defer b.Close()
+
+		for _, c := range []*ExpirableCache{a, b} {
+			_, err = c.Get("k", func() (any, error) { return "v", nil })
+			require.NoError(t, err)
+		}
+		waitExpired(t, a, "k")
+		_, err = a.Get("k", func() (any, error) { return "v2", nil })
+		require.NoError(t, err)
+		ps.Wait()
+
+		assert.Empty(t, ps.CalledKeys(), "reloading an expired key publishes nothing")
+		v, ok := a.Peek("k")
+		assert.True(t, ok)
+		assert.Equal(t, "v2", v)
+		v, ok = b.Peek("k")
+		assert.True(t, ok)
+		assert.Equal(t, "v", v)
+	})
+}
+
+// expireSoon replaces the backend of c with one that expires entries after 200ms and never purges them,
+// so an expired entry stays in it until something removes it
+func expireSoon(t *testing.T, c *ExpirableCache) {
+	t.Helper()
+	require.NoError(t, c.Close())
+	backend, err := cache.NewLoadingCache(cache.TTL(200*time.Millisecond), cache.OnEvicted(c.onBackendEvicted))
+	require.NoError(t, err)
+	c.backend = backend
+}
+
+// waitExpired waits until the entry of key has expired, and checks it is still in the backend
+func waitExpired(t *testing.T, c *ExpirableCache, key string) {
+	t.Helper()
+	require.Eventually(t, func() bool { _, ok := c.Peek(key); return !ok }, 5*time.Second, time.Millisecond,
+		"entry of %q did not expire", key)
+	require.Contains(t, c.Keys(), key, "expired entry is still in the backend")
+}
+
+func TestExpirableCache_ZeroTTL(t *testing.T) {
+	c, err := NewExpirableCache(TTL(0))
+	require.NoError(t, err)
+	defer c.Close()
+
+	loads := 0
+	for i := 0; i < 3; i++ {
+		v, err := c.Get("k", func() (any, error) { loads++; return "v", nil })
+		require.NoError(t, err)
+		assert.Equal(t, "v", v)
+	}
+	assert.Equal(t, 1, loads, "TTL(0) keeps the entry, the loader runs once")
+	v, ok := c.Peek("k")
+	assert.True(t, ok)
+	assert.Equal(t, "v", v)
+	assert.Equal(t, int64(2), c.Stat().Hits)
 }

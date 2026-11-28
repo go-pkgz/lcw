@@ -16,11 +16,13 @@ import (
 type ExpirableCache[V any] struct {
 	Workers[V]
 	CacheStat
-	currentSize int64
+	currentSize atomic.Int64
 	id          string
 	backend     *expirable.LRU[string, V]
 	loads       loadGroup[V]
 	storeMu     sync.Mutex
+	closed      atomic.Bool            // set by Close, evictions reported after it are not published on the event bus
+	storing     atomic.Pointer[string] // key whose expired entry store is removing, its removal is not published
 }
 
 // NewExpirableCache makes expirable LoadingCache implementation, 1000 max keys by default and 5m TTL.
@@ -50,11 +52,20 @@ func NewExpirableCache[V any](opts ...Option[V]) (*ExpirableCache[V], error) {
 	}
 
 	res.backend = expirable.NewLRU[string, V](res.maxKeys, func(key string, value V) {
+		// read before OnEvicted: Close sets the flag without the backend lock, and a Close that starts while the
+		// handler runs must not stop this removal from being published. The callbacks of Close's own purge read true
+		closed := res.closed.Load()
 		if res.onEvicted != nil {
 			res.onEvicted(key, value)
 		}
 		if size, ok := sizeOf(value); ok {
-			atomic.AddInt64(&res.currentSize, -1*int64(size))
+			res.currentSize.Add(-1 * int64(size))
+		}
+		if closed {
+			return // a closed cache drops its entries locally, other instances keep their copies
+		}
+		if k := res.storing.Load(); k != nil && *k == key && res.storing.CompareAndSwap(k, nil) {
+			return // the expired entry store removes, see there
 		}
 		// ignore the error on Publish as we don't have log inside the module and
 		// there is no other way to handle it: we publish the cache invalidation
@@ -99,15 +110,29 @@ func (c *ExpirableCache[V]) store(key string, data V) {
 	c.storeMu.Lock()
 	defer c.storeMu.Unlock()
 
+	// an entry of this key still in the backend has expired, a live one would have been served instead
+	// of the load. It stays until the backend cleans it up, counting against MaxKeys, and Add would
+	// replace it without calling the eviction callback, so its size would never be subtracted. It is
+	// removed here, through the callback, which does not publish the key on the event bus, as this key is
+	// being reloaded, even if the limits refuse the new value. The callback takes the marker off for the
+	// first removal of the key it sees; when that one was not this Remove, another one (Delete, cleanup)
+	// took the entry and was not published, so it is published here.
+	marker := &key
+	c.storing.Store(marker)
+	removed := c.backend.Remove(key)
+	if !c.storing.CompareAndSwap(marker, nil) && !removed {
+		_ = c.eventBus.Publish(c.id, key)
+	}
+
 	if !c.allowed(key, data) {
 		return
 	}
 
 	if size, ok := sizeOf(data); ok {
-		if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize)+int64(size) > c.maxCacheSize {
+		if c.maxCacheSize > 0 && c.currentSize.Load()+int64(size) > c.maxCacheSize {
 			return
 		}
-		atomic.AddInt64(&c.currentSize, int64(size))
+		c.currentSize.Add(int64(size))
 	}
 
 	c.backend.Add(key, data)
@@ -130,7 +155,7 @@ func (c *ExpirableCache[V]) Peek(key string) (V, bool) {
 // Purge clears the cache completely.
 func (c *ExpirableCache[V]) Purge() {
 	c.backend.Purge()
-	atomic.StoreInt64(&c.currentSize, 0)
+	c.currentSize.Store(0)
 }
 
 // Delete cache item by key
@@ -154,12 +179,19 @@ func (c *ExpirableCache[V]) Stat() CacheStat {
 	}
 }
 
-// Close supposed to kill cleanup goroutine,
-// but it's not possible before https://github.com/hashicorp/golang-lru/issues/159 is solved
-// so for now it just cleans it.
+// Close removes all entries, calling OnEvicted for each of them, and publishes none of them on the event bus,
+// so closing one instance does not invalidate these keys in other instances. Removals the backend reports
+// after Close starts are not published either. A removal by Delete, Invalidate, Purge, expiry or an
+// invalidation from another instance that the backend reported before Close started is still published,
+// even if its OnEvicted handler returns after Close; if a reload of the same key was storing its value at
+// that time, the reload may publish the removal in its place. The expired entry a reload replaces is never
+// published.
+// With a TTL other than 0 the backend runs a cleanup goroutine, which Close can't stop before
+// https://github.com/hashicorp/golang-lru/issues/159 is solved, so that goroutine keeps running.
 func (c *ExpirableCache[V]) Close() error {
+	c.closed.Store(true)
 	c.backend.Purge()
-	atomic.StoreInt64(&c.currentSize, 0)
+	c.currentSize.Store(0)
 	return nil
 }
 
@@ -171,7 +203,7 @@ func (c *ExpirableCache[V]) onBusEvent(id, key string) {
 }
 
 func (c *ExpirableCache[V]) size() int64 {
-	return atomic.LoadInt64(&c.currentSize)
+	return c.currentSize.Load()
 }
 
 func (c *ExpirableCache[V]) keys() int {

@@ -67,7 +67,7 @@ func TestExpirableRedisCache(t *testing.T) {
 }
 
 func TestRedisCache(t *testing.T) {
-	var coldCalls int32
+	var coldCalls atomic.Int32
 
 	server := newTestRedisServer()
 	defer server.Close()
@@ -82,12 +82,12 @@ func TestRedisCache(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		i := i
 		res, e := rc.Get(fmt.Sprintf("key-%d", i), func() (string, error) {
-			atomic.AddInt32(&coldCalls, 1)
+			coldCalls.Add(1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
 		assert.NoError(t, e)
 		assert.Equal(t, fmt.Sprintf("result-%d", i), res)
-		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
+		assert.Equal(t, int32(i+1), coldCalls.Load())
 	}
 
 	// check if really cached
@@ -219,6 +219,31 @@ func TestRedisCache_PeekStringBasedType(t *testing.T) {
 	assert.Equal(t, sizedString("value"), res)
 }
 
+// plainString is a named string type without MarshalBinary, which go-redis can't marshal by itself
+type plainString string
+
+func TestRedisCache_NamedStringType(t *testing.T) {
+	server := newTestRedisServer()
+	defer server.Close()
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	defer client.Close()
+
+	o := NewOpts[plainString]()
+	rc, err := NewRedisCache(client, o.StrToV(func(s string) plainString { return plainString(s) }))
+	require.NoError(t, err)
+
+	loads := 0
+	for i := 0; i < 3; i++ {
+		res, err := rc.Get("key", func() (plainString, error) { loads++; return "value", nil })
+		require.NoError(t, err)
+		assert.Equal(t, plainString("value"), res)
+	}
+	assert.Equal(t, 1, loads, "loaded once, then served from redis")
+	assert.Equal(t, []string{"key"}, rc.Keys())
+	assert.Equal(t, int64(2), rc.Stat().Hits)
+	assert.Equal(t, int64(0), rc.Stat().Errors)
+}
+
 func TestRedisCache_KeyPrefix(t *testing.T) {
 	server := newTestRedisServer()
 	defer server.Close()
@@ -244,14 +269,14 @@ func TestRedisCache_KeyPrefix(t *testing.T) {
 	assert.Equal(t, 1, rc.Stat().Keys, "foreign key not counted")
 
 	// a key colliding with foreign data is a miss, not a hit on somebody else's value
-	var coldCalls int32
+	var coldCalls atomic.Int32
 	res, err := rc.Get("foreign-key", func() (string, error) {
-		atomic.AddInt32(&coldCalls, 1)
+		coldCalls.Add(1)
 		return "own-value", nil
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "own-value", res)
-	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+	assert.Equal(t, int32(1), coldCalls.Load())
 	foreign, err := client.Get(ctx, "foreign-key").Result()
 	require.NoError(t, err)
 	assert.Equal(t, "foreign-value", foreign, "foreign value untouched")

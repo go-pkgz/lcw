@@ -21,7 +21,7 @@ type ExpirableCache[V any] struct {
 	backend     *expirable.LRU[string, V]
 	loads       loadGroup[V]
 	storeMu     sync.Mutex
-	closed      atomic.Bool            // set by Close, stops publishing evictions on the event bus
+	closed      atomic.Bool            // set by Close, evictions reported after it are not published on the event bus
 	storing     atomic.Pointer[string] // key whose expired entry store is removing, its removal is not published
 }
 
@@ -52,13 +52,16 @@ func NewExpirableCache[V any](opts ...Option[V]) (*ExpirableCache[V], error) {
 	}
 
 	res.backend = expirable.NewLRU[string, V](res.maxKeys, func(key string, value V) {
+		// read before OnEvicted: Close sets the flag without the backend lock, and a Close that starts while the
+		// handler runs must not stop this removal from being published. The callbacks of Close's own purge read true
+		closed := res.closed.Load()
 		if res.onEvicted != nil {
 			res.onEvicted(key, value)
 		}
 		if size, ok := sizeOf(value); ok {
 			atomic.AddInt64(&res.currentSize, -1*int64(size))
 		}
-		if res.closed.Load() {
+		if closed {
 			return // a closed cache drops its entries locally, other instances keep their copies
 		}
 		if k := res.storing.Load(); k != nil && *k == key && res.storing.CompareAndSwap(k, nil) {
@@ -176,11 +179,13 @@ func (c *ExpirableCache[V]) Stat() CacheStat {
 	}
 }
 
-// Close removes all entries, calling OnEvicted for each of them. From then on the cache publishes
-// no evictions on the event bus, so closing one instance does not invalidate these keys in other instances.
-// The one exception is a key removed before Close by anything other than Close (Delete, Invalidate, Purge,
-// expiry or an invalidation from another instance) while a reload of the same key was storing its value:
-// that reload publishes the removal when it finishes, even after Close.
+// Close removes all entries, calling OnEvicted for each of them, and publishes none of them on the event bus,
+// so closing one instance does not invalidate these keys in other instances. Removals the backend reports
+// after Close starts are not published either. A removal by Delete, Invalidate, Purge, expiry or an
+// invalidation from another instance that the backend reported before Close started is still published,
+// even if its OnEvicted handler returns after Close; if a reload of the same key was storing its value at
+// that time, the reload may publish the removal in its place. The expired entry a reload replaces is never
+// published.
 // With a TTL other than 0 the backend runs a cleanup goroutine, which Close can't stop before
 // https://github.com/hashicorp/golang-lru/issues/159 is solved, so that goroutine keeps running.
 func (c *ExpirableCache[V]) Close() error {

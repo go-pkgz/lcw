@@ -423,3 +423,50 @@ func TestExpirableCache_CloseKeepsPeers(t *testing.T) {
 	assert.True(t, ok, "the other instance keeps its key")
 	assert.Equal(t, "v", v)
 }
+
+// a Delete whose OnEvicted handler is still running when Close starts publishes the key
+func TestExpirableCache_CloseDuringDelete(t *testing.T) {
+	ps := &mockPubSub{}
+	o := NewOpts[string]()
+	inDelete, release := make(chan struct{}), make(chan struct{})
+	var holdOnce, releaseOnce sync.Once
+	c, err := NewExpirableCache(o.TTL(time.Hour), o.EventBus(ps), o.OnEvicted(func(string, string) {
+		holdOnce.Do(func() {
+			close(inDelete)
+			<-release
+		})
+	}))
+	require.NoError(t, err)
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	for _, k := range []string{"k", "j"} {
+		_, err = c.Get(k, func() (string, error) { return "v", nil })
+		require.NoError(t, err)
+	}
+
+	deleted, closed := make(chan struct{}), make(chan error, 1)
+	go func() { defer close(deleted); c.Delete("k") }()
+	select {
+	case <-inDelete:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "Delete did not reach OnEvicted")
+	}
+	go func() { closed <- c.Close() }()
+	require.Eventually(t, c.closed.Load, 5*time.Second, time.Millisecond, "Close did not start")
+	unblock()
+	select {
+	case <-deleted:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "Delete did not return")
+	}
+	select {
+	case err = <-closed:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "Close did not return")
+	}
+	ps.Wait()
+
+	assert.Equal(t, []string{"k"}, ps.CalledKeys(), "Delete of the key is published once, Close publishes nothing")
+	assert.Equal(t, 0, c.Stat().Keys)
+}

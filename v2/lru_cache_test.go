@@ -21,7 +21,7 @@ import (
 )
 
 func TestLruCache_MaxKeys(t *testing.T) {
-	var coldCalls int32
+	var coldCalls atomic.Int32
 	o := NewOpts[string]()
 	lc, err := NewLruCache(o.MaxKeys(5), o.MaxValSize(10))
 	require.NoError(t, err)
@@ -30,12 +30,12 @@ func TestLruCache_MaxKeys(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		i := i
 		res, e := lc.Get(fmt.Sprintf("key-%d", i), func() (string, error) {
-			atomic.AddInt32(&coldCalls, 1)
+			coldCalls.Add(1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
 		assert.NoError(t, e)
 		assert.Equal(t, fmt.Sprintf("result-%d", i), res)
-		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
+		assert.Equal(t, int32(i+1), coldCalls.Load())
 	}
 
 	keys := lc.Keys()
@@ -94,7 +94,7 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 	ps := &mockPubSub{}
 	o := NewOpts[string]()
 
-	var coldCalls int32
+	var coldCalls atomic.Int32
 	lc1, err := NewLruCache(o.MaxKeys(5), o.MaxValSize(10), o.EventBus(ps))
 	require.NoError(t, err)
 	defer lc1.Close()
@@ -107,12 +107,12 @@ func TestLruCache_MaxKeysWithBus(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		i := i
 		res, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (string, error) {
-			atomic.AddInt32(&coldCalls, 1)
+			coldCalls.Add(1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
 		assert.NoError(t, e)
 		assert.Equal(t, fmt.Sprintf("result-%d", i), res)
-		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
+		assert.Equal(t, int32(i+1), coldCalls.Load())
 	}
 	// check if really cached
 	res, err := lc1.Get("key-3", func() (string, error) {
@@ -162,7 +162,7 @@ func TestLruCache_MaxKeysWithRedis(t *testing.T) {
 		t.Skip("ENABLE_REDIS_TESTS env variable is not set, not expecting Redis to be ready at 127.0.0.1:6379")
 	}
 
-	var coldCalls int32
+	var coldCalls atomic.Int32
 
 	//nolint:gosec // not used for security	purpose
 	channel := "lcw-test-" + strconv.Itoa(rand.Intn(1000000))
@@ -184,12 +184,12 @@ func TestLruCache_MaxKeysWithRedis(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		i := i
 		res, e := lc1.Get(fmt.Sprintf("key-%d", i), func() (string, error) {
-			atomic.AddInt32(&coldCalls, 1)
+			coldCalls.Add(1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
 		assert.NoError(t, e)
 		assert.Equal(t, fmt.Sprintf("result-%d", i), res)
-		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
+		assert.Equal(t, int32(i+1), coldCalls.Load())
 	}
 	// check if really cached
 	res, err := lc1.Get("key-3", func() (string, error) {

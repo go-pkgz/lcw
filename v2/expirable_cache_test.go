@@ -51,7 +51,7 @@ func TestExpirableCache(t *testing.T) {
 }
 
 func TestExpirableCache_MaxKeys(t *testing.T) {
-	var coldCalls int32
+	var coldCalls atomic.Int32
 	o := NewOpts[string]()
 	lc, err := NewExpirableCache(o.MaxKeys(5), o.MaxValSize(10))
 	require.NoError(t, err)
@@ -60,12 +60,12 @@ func TestExpirableCache_MaxKeys(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		i := i
 		res, e := lc.Get(fmt.Sprintf("key-%d", i), func() (string, error) {
-			atomic.AddInt32(&coldCalls, 1)
+			coldCalls.Add(1)
 			return fmt.Sprintf("result-%d", i), nil
 		})
 		assert.NoError(t, e)
 		assert.Equal(t, fmt.Sprintf("result-%d", i), res)
-		assert.Equal(t, int32(i+1), atomic.LoadInt32(&coldCalls))
+		assert.Equal(t, int32(i+1), coldCalls.Load())
 	}
 
 	// check if really cached
@@ -208,13 +208,13 @@ func TestExpirableCache_ConcurrentAdmission(t *testing.T) {
 	t.Run("max keys", func(t *testing.T) {
 		o := NewOpts[sizedString]()
 		for round := 0; round < 200; round++ {
-			var evicted int32
+			var evicted atomic.Int32
 			c, err := NewExpirableCache(o.MaxKeys(5), o.TTL(time.Hour),
-				o.OnEvicted(func(string, sizedString) { atomic.AddInt32(&evicted, 1) }))
+				o.OnEvicted(func(string, sizedString) { evicted.Add(1) }))
 			require.NoError(t, err)
 			loadAll(t, c, 50, func(i int) sizedString { return sizedString(fmt.Sprintf("value-%d", i)) })
 			require.Equal(t, 5, c.keys(), "round %d", round)
-			require.Equal(t, int32(0), atomic.LoadInt32(&evicted), "round %d", round)
+			require.Equal(t, int32(0), evicted.Load(), "round %d", round)
 			require.NoError(t, c.Close())
 		}
 	})

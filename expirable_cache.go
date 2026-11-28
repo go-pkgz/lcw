@@ -15,7 +15,7 @@ import (
 type ExpirableCache struct {
 	options
 	CacheStat
-	currentSize int64
+	currentSize atomic.Int64
 	id          string
 	backend     *cache.LoadingCache
 	loads       loadGroup
@@ -65,7 +65,7 @@ func (c *ExpirableCache) onBackendEvicted(key string, value any) {
 		c.onEvicted(key, value)
 	}
 	if size, ok := sizeOf(value); ok {
-		atomic.AddInt64(&c.currentSize, -1*int64(size))
+		c.currentSize.Add(-1 * int64(size))
 	}
 	// ignore the error on Publish as we don't have log inside the module and
 	// there is no other way to handle it: we publish the cache invalidation
@@ -126,7 +126,7 @@ func (c *ExpirableCache) store(key string, data any) (expired any, replaced, ful
 	// published on the event bus, as this key is being reloaded, even if the limits refuse the new value.
 	if expired, replaced = c.backend.Remove(key); replaced {
 		if size, ok := sizeOf(expired); ok {
-			atomic.AddInt64(&c.currentSize, -1*int64(size))
+			c.currentSize.Add(-1 * int64(size))
 		}
 	}
 
@@ -135,10 +135,10 @@ func (c *ExpirableCache) store(key string, data any) (expired any, replaced, ful
 	}
 
 	if size, ok := sizeOf(data); ok {
-		if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize)+int64(size) > c.maxCacheSize {
+		if c.maxCacheSize > 0 && c.currentSize.Load()+int64(size) > c.maxCacheSize {
 			return expired, replaced, true
 		}
-		atomic.AddInt64(&c.currentSize, int64(size))
+		c.currentSize.Add(int64(size))
 	}
 
 	c.backend.Set(key, data)
@@ -158,7 +158,7 @@ func (c *ExpirableCache) Peek(key string) (any, bool) {
 // Purge clears the cache completely.
 func (c *ExpirableCache) Purge() {
 	c.backend.Purge()
-	atomic.StoreInt64(&c.currentSize, 0)
+	c.currentSize.Store(0)
 }
 
 // Delete cache item by key
@@ -196,7 +196,7 @@ func (c *ExpirableCache) onBusEvent(id, key string) {
 }
 
 func (c *ExpirableCache) size() int64 {
-	return atomic.LoadInt64(&c.currentSize)
+	return c.currentSize.Load()
 }
 
 func (c *ExpirableCache) keys() int {

@@ -21,23 +21,23 @@ func TestScache_Get(t *testing.T) {
 	lc := NewScache[[]byte](lru)
 	defer lc.Close()
 
-	var coldCalls int32
+	var coldCalls atomic.Int32
 
 	res, err := lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
-		atomic.AddInt32(&coldCalls, 1)
+		coldCalls.Add(1)
 		return []byte("result"), nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result", string(res))
-	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+	assert.Equal(t, int32(1), coldCalls.Load())
 
 	res, err = lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
-		atomic.AddInt32(&coldCalls, 1)
+		coldCalls.Add(1)
 		return []byte("result"), nil
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, "result", string(res))
-	assert.Equal(t, int32(1), atomic.LoadInt32(&coldCalls))
+	assert.Equal(t, int32(1), coldCalls.Load())
 
 	lc.Flush(Flusher("site"))
 	time.Sleep(100 * time.Millisecond) // let postFn to do its thing
@@ -192,7 +192,7 @@ func TestScope_Key(t *testing.T) {
 }
 
 func TestScache_Parallel(t *testing.T) {
-	var coldCalls int32
+	var coldCalls atomic.Int32
 	lru, err := NewLruCache[[]byte]()
 	require.NoError(t, err)
 	lc := NewScache[[]byte](lru)
@@ -210,7 +210,7 @@ func TestScache_Parallel(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			res, err := lc.Get(NewKey("site").ID("key"), func() ([]byte, error) {
-				atomic.AddInt32(&coldCalls, 1)
+				coldCalls.Add(1)
 				return fmt.Appendf(nil, "result-%d", i), nil
 			})
 			require.NoError(t, err)
@@ -218,7 +218,7 @@ func TestScache_Parallel(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	assert.Equal(t, int32(0), atomic.LoadInt32(&coldCalls))
+	assert.Equal(t, int32(0), coldCalls.Load())
 }
 
 // LruCache illustrates the use of LRU loading cache

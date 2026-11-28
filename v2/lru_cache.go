@@ -16,7 +16,7 @@ type LruCache[V any] struct {
 	Workers[V]
 	CacheStat
 	backend     *lru.Cache[string, V]
-	currentSize int64
+	currentSize atomic.Int64
 	id          string // uuid identifying cache instance
 	loads       loadGroup[V]
 }
@@ -51,7 +51,7 @@ func (c *LruCache[V]) init() error {
 			c.onEvicted(key, value)
 		}
 		if size, ok := sizeOf(value); ok {
-			atomic.AddInt64(&c.currentSize, -1*int64(size))
+			c.currentSize.Add(-1 * int64(size))
 		}
 		_ = c.eventBus.Publish(c.id, key) // signal invalidation to other nodes
 	}
@@ -99,8 +99,8 @@ func (c *LruCache[V]) Get(key string, fn func() (V, error)) (data V, err error) 
 		c.backend.Add(key, data)
 
 		if size, ok := sizeOf(data); ok {
-			atomic.AddInt64(&c.currentSize, int64(size))
-			for c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize) > c.maxCacheSize {
+			c.currentSize.Add(int64(size))
+			for c.maxCacheSize > 0 && c.currentSize.Load() > c.maxCacheSize {
 				if _, _, ok := c.backend.RemoveOldest(); !ok { // nothing left to evict
 					break
 				}
@@ -119,7 +119,7 @@ func (c *LruCache[V]) Peek(key string) (V, bool) {
 // Purge clears the cache completely.
 func (c *LruCache[V]) Purge() {
 	c.backend.Purge()
-	atomic.StoreInt64(&c.currentSize, 0)
+	c.currentSize.Store(0)
 }
 
 // Invalidate removes keys with passed predicate fn, i.e. fn(key) should be true to get evicted
@@ -165,7 +165,7 @@ func (c *LruCache[V]) onBusEvent(id, key string) {
 }
 
 func (c *LruCache[V]) size() int64 {
-	return atomic.LoadInt64(&c.currentSize)
+	return c.currentSize.Load()
 }
 
 func (c *LruCache[V]) keys() int {

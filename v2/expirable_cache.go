@@ -16,7 +16,7 @@ import (
 type ExpirableCache[V any] struct {
 	Workers[V]
 	CacheStat
-	currentSize int64
+	currentSize atomic.Int64
 	id          string
 	backend     *expirable.LRU[string, V]
 	loads       loadGroup[V]
@@ -59,7 +59,7 @@ func NewExpirableCache[V any](opts ...Option[V]) (*ExpirableCache[V], error) {
 			res.onEvicted(key, value)
 		}
 		if size, ok := sizeOf(value); ok {
-			atomic.AddInt64(&res.currentSize, -1*int64(size))
+			res.currentSize.Add(-1 * int64(size))
 		}
 		if closed {
 			return // a closed cache drops its entries locally, other instances keep their copies
@@ -129,10 +129,10 @@ func (c *ExpirableCache[V]) store(key string, data V) {
 	}
 
 	if size, ok := sizeOf(data); ok {
-		if c.maxCacheSize > 0 && atomic.LoadInt64(&c.currentSize)+int64(size) > c.maxCacheSize {
+		if c.maxCacheSize > 0 && c.currentSize.Load()+int64(size) > c.maxCacheSize {
 			return
 		}
-		atomic.AddInt64(&c.currentSize, int64(size))
+		c.currentSize.Add(int64(size))
 	}
 
 	c.backend.Add(key, data)
@@ -155,7 +155,7 @@ func (c *ExpirableCache[V]) Peek(key string) (V, bool) {
 // Purge clears the cache completely.
 func (c *ExpirableCache[V]) Purge() {
 	c.backend.Purge()
-	atomic.StoreInt64(&c.currentSize, 0)
+	c.currentSize.Store(0)
 }
 
 // Delete cache item by key
@@ -191,7 +191,7 @@ func (c *ExpirableCache[V]) Stat() CacheStat {
 func (c *ExpirableCache[V]) Close() error {
 	c.closed.Store(true)
 	c.backend.Purge()
-	atomic.StoreInt64(&c.currentSize, 0)
+	c.currentSize.Store(0)
 	return nil
 }
 
@@ -203,7 +203,7 @@ func (c *ExpirableCache[V]) onBusEvent(id, key string) {
 }
 
 func (c *ExpirableCache[V]) size() int64 {
-	return atomic.LoadInt64(&c.currentSize)
+	return c.currentSize.Load()
 }
 
 func (c *ExpirableCache[V]) keys() int {
